@@ -1,8 +1,14 @@
 // WebSocket hook — streams all GhostNet events in real time
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-const WS_URL = 'ws://localhost:8000/ws/events'
-const API_URL = 'http://localhost:8000'
+// In production (Vercel) the dashboard and API share the same origin.
+// In local dev, the Vite proxy forwards /nodes and /alerts to localhost:8000.
+const IS_DEV = import.meta.env.DEV
+const API_URL = IS_DEV ? 'http://localhost:8000' : ''
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const WS_URL = IS_DEV
+  ? 'ws://localhost:8000/ws/events'
+  : `${WS_PROTOCOL}//${window.location.host}/ws/events`
 const MAX_EVENTS = 300
 const POLL_INTERVAL_MS = 2000
 const MAX_HISTORY = 60  // score history points per node

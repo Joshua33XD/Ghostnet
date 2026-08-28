@@ -7,10 +7,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // REST API
-      '/nodes': { target: 'http://localhost:8000', changeOrigin: true },
-      '/alerts': { target: 'http://localhost:8000', changeOrigin: true },
-      // WebSocket — keep as direct ws://localhost:8000/ws/events in the hook
+      '/nodes':   { target: 'http://localhost:8000', changeOrigin: true },
+      '/alerts':  { target: 'http://localhost:8000', changeOrigin: true },
+      '/ingest':  { target: 'http://localhost:8000', changeOrigin: true },
+      '/ws':      { target: 'ws://localhost:8000',   changeOrigin: true, ws: true },
     },
   },
 })
