@@ -1,2 +1,15 @@
+[project]
+name = "ghostnet"
+version = "2.0.0"
+description = "IoT anomaly detection engine"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.111.0",
+    "uvicorn[standard]==0.29.0",
+    "websockets==12.0",
+    "paho-mqtt==1.6.1",
+    "rich==13.7.1",
+]
+
 [tool.vercel]
 entrypoint = "ghostnet/api/main.py"
