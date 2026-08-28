@@ -1,4 +1,4 @@
-// Header — premium branded header with live clock
+// Header — cyber brand with live clock
 import { useState, useEffect } from 'react'
 
 export default function Header({ wsStatus }) {
@@ -9,10 +9,12 @@ export default function Header({ wsStatus }) {
     return () => clearInterval(t)
   }, [])
 
+  const statusLabel = { connected: 'Live', connecting: 'Syncing', disconnected: 'Offline' }
+
   return (
     <header className="header">
       <div className="header-brand">
-        <div className="header-logo">◉</div>
+        <div className="header-logo">GN</div>
         <div>
           <h1>GhostNet</h1>
           <span className="subtitle">IoT Anomaly Detection Engine</span>
@@ -23,7 +25,7 @@ export default function Header({ wsStatus }) {
         <span className="header-time">{time}</span>
         <div className={`ws-badge ${wsStatus}`}>
           <div className="ws-dot" />
-          {wsStatus === 'connected' ? 'Live' : wsStatus === 'connecting' ? 'Connecting' : 'Offline'}
+          {statusLabel[wsStatus] ?? wsStatus}
         </div>
       </div>
     </header>

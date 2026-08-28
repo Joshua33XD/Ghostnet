@@ -9,53 +9,60 @@ export function getScoreClass(score) {
 
 export function getStatusIcon(status) {
   switch (status) {
-    case 'HEALTHY':     return '🟢'
-    case 'SUSPICIOUS':  return '🟡'
-    case 'QUARANTINED': return '🔴'
-    case 'OFFLINE':     return '⚫'
-    default:            return '⚪'
+    case 'HEALTHY':     return '●'
+    case 'SUSPICIOUS':  return '◐'
+    case 'QUARANTINED': return '⊗'
+    case 'OFFLINE':     return '○'
+    default:            return '·'
   }
 }
 
 export function getEventIcon(tag) {
+  if (!tag) return '·'
+  if (tag.startsWith('THREAT')) return '!'
   const map = {
-    'INFO':           'ℹ️',
-    'MQTT-RX':        '📡',
-    'MQTT-TX':        '📤',
-    'HEARTBEAT':      '💓',
-    'ONLINE':         '🟢',
-    'OFFLINE':        '🔴',
-    'SCORE':          '🔬',
-    'WARN':           '⚡',
-    'ATTACK':         '⚠️',
-    'QUARANTINE':     '🔒',
-    'RECOVERY-CHECK': '🔍',
-    'RECOVERED':      '✅',
-    'ERROR':          '💥',
+    'INFO':           'i',
+    'MQTT-RX':        '↓',
+    'MQTT-TX':        '↑',
+    'HEARTBEAT':      '♥',
+    'ONLINE':         '●',
+    'OFFLINE':        '○',
+    'SCORE':          '~',
+    'WARN':           '!',
+    'ATTACK':         '⚡',
+    'QUARANTINE':     '⊗',
+    'RECOVERY-CHECK': '?',
+    'RECOVERED':      '✓',
+    'PROTECT':        '⊞',
+    'SELF-HEAL':      '+',
+    'THREAT-CLEAR':   '✓',
+    'ERROR':          '✕',
   }
   return map[tag] ?? '·'
 }
 
 export function isCriticalTag(tag) {
-  return ['ATTACK', 'QUARANTINE', 'OFFLINE'].includes(tag)
+  return ['ATTACK', 'QUARANTINE', 'OFFLINE'].includes(tag) ||
+    (tag && tag.startsWith('THREAT:'))
 }
 
 export function isGoodTag(tag) {
-  return ['RECOVERED', 'ONLINE', 'HEARTBEAT'].includes(tag)
+  return ['RECOVERED', 'ONLINE', 'HEARTBEAT', 'THREAT-CLEAR', 'SELF-HEAL'].includes(tag)
 }
 
 export function formatElapsed(ts) {
   if (!ts) return '—'
   const now = Date.now() / 1000
   const diff = now - ts
+  if (diff < 5)    return 'just now'
   if (diff < 60)   return `${Math.round(diff)}s ago`
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`
   return `${Math.round(diff / 3600)}h ago`
 }
 
 export function formatRate(rate) {
-  if (!rate) return '0 msg/s'
-  return `${rate.toFixed(2)} msg/s`
+  if (!rate) return '0 /s'
+  return `${rate.toFixed(2)} /s`
 }
 
 export function formatBytes(bytes) {
