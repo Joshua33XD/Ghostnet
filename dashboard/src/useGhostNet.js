@@ -62,7 +62,7 @@ export function useGhostNet() {
   const pushEvent = useCallback((evt) => {
     setEvents(prev => {
       const id = ++eventIdRef.current
-      const enriched = { ...evt, _id: id, _new: true }
+      const enriched = { ...evt, _id: id, _new: true, _received: Date.now() }
       const next = [enriched, ...prev].slice(0, MAX_EVENTS)
       return next
     })

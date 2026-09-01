@@ -70,3 +70,34 @@ export function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes.toFixed(0)} B`
   return `${(bytes / 1024).toFixed(1)} KB`
 }
+
+// --- Event-timestamp helpers ---
+// Events from the WS hook are stamped with _received (Date.now() ms) by useGhostNet.
+// Fall back to parsing evt.ts as ISO if _received is absent.
+
+export function formatRelativeTime(receivedMs, rawTs) {
+  // Prefer the _received epoch added by the hook; fall back to parsing rawTs
+  let epochMs = receivedMs
+  if (!epochMs && rawTs) {
+    const d = new Date(rawTs)
+    epochMs = isNaN(d.getTime()) ? null : d.getTime()
+  }
+  if (!epochMs) return rawTs ?? '—'
+
+  const diff = (Date.now() - epochMs) / 1000
+  if (diff < 5)     return 'just now'
+  if (diff < 60)    return `${Math.floor(diff)}s ago`
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+export function formatExactTime(receivedMs, rawTs) {
+  let epochMs = receivedMs
+  if (!epochMs && rawTs) {
+    const d = new Date(rawTs)
+    epochMs = isNaN(d.getTime()) ? null : d.getTime()
+  }
+  if (!epochMs) return rawTs ?? '—'
+  return new Date(epochMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}

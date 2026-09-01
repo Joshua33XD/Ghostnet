@@ -1,4 +1,4 @@
-// ThreatRadar — multi-node anomaly score timeline
+// ThreatRadar — multi-node anomaly score bars with skeleton state
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ReferenceLine, ResponsiveContainer
@@ -7,6 +7,27 @@ import {
 const COLORS = ['#00c8ff', '#00ff9d', '#ffd166', '#ff8c42', '#ff3d6e', '#7b8fff', '#c084fc']
 
 const THRESHOLD = 0.75
+
+function ThreatRadarSkeleton() {
+  return (
+    <div className="threat-radar-card">
+      <div className="threat-radar-header">
+        <div className="skeleton-block" style={{ width: 130, height: 13, borderRadius: 4 }} />
+        <div className="skeleton-block" style={{ width: 200, height: 10, borderRadius: 3, marginLeft: 8 }} />
+      </div>
+      <div className="threat-radar-bars">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="threat-node-row">
+            <div className="skeleton-block" style={{ height: 11, borderRadius: 3 }} />
+            <div className="skeleton-block" style={{ height: 7, borderRadius: 4 }} />
+            <div className="skeleton-block" style={{ width: 40, height: 11, borderRadius: 3 }} />
+            <div className="skeleton-block" style={{ width: 66, height: 16, borderRadius: 8 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -28,8 +49,10 @@ function CustomTooltip({ active, payload, label }) {
   )
 }
 
-export default function ThreatRadar({ nodes }) {
+export default function ThreatRadar({ nodes, wsStatus }) {
   const nodeList = Object.values(nodes)
+
+  if (wsStatus === 'connecting' && nodeList.length === 0) return <ThreatRadarSkeleton />
   if (nodeList.length === 0) return null
 
   // Build a combined series: each node is a line

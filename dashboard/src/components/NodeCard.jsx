@@ -1,17 +1,41 @@
 // NodeCard — full visual upgrade with sparkline + radial score gauge
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { getScoreClass, getStatusIcon, formatElapsed, formatRate, formatBytes } from '../utils.js'
 import ThreatBadge from './ThreatBadge.jsx'
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip
 } from 'recharts'
 
+/* ── Skeleton placeholder ──────────────────────────────────── */
+export function NodeCardSkeleton() {
+  return (
+    <div className="skeleton-card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="skeleton-block" style={{ height: 13, width: '55%', borderRadius: 4 }} />
+          <div className="skeleton-block" style={{ height: 9,  width: '40%', borderRadius: 3 }} />
+        </div>
+        <div className="skeleton-block" style={{ width: 72, height: 72, borderRadius: '50%' }} />
+      </div>
+      <div className="skeleton-block" style={{ height: 7, borderRadius: 20, marginBottom: 14 }} />
+      <div className="skeleton-block" style={{ height: 50, borderRadius: 6, marginBottom: 10 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+        {[1,2,3,4].map(i => (
+          <div key={i} className="skeleton-block" style={{ height: 40, borderRadius: 6 }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Radial anomaly gauge ───────────────────────────────────── */
 function RadialGauge({ score }) {
-  const pct = Math.min(score, 1)
-  const r = 28
-  const circ = 2 * Math.PI * r
-  const dash = circ * pct
+  const pct   = Math.min(score, 1)
+  const r     = 28
+  const circ  = 2 * Math.PI * r
+  const dash  = circ * pct
   const color = pct >= 0.75 ? '#ff3d6e' : pct >= 0.5 ? '#ff8c42' : pct >= 0.25 ? '#ffd166' : '#00ff9d'
-  const glow = pct >= 0.75 ? 'rgba(255,61,110,0.6)' : pct >= 0.5 ? 'rgba(255,140,66,0.5)' : 'rgba(0,255,157,0.4)'
+  const glow  = pct >= 0.75 ? 'rgba(255,61,110,0.6)' : pct >= 0.5 ? 'rgba(255,140,66,0.5)' : 'rgba(0,255,157,0.4)'
 
   return (
     <svg width={72} height={72} viewBox="0 0 72 72">
@@ -43,29 +67,27 @@ function RadialGauge({ score }) {
   )
 }
 
+/* ── Score sparkline ────────────────────────────────────────── */
 function Sparkline({ history, status }) {
   if (!history || history.length < 2) {
     return <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 10 }}>no data</div>
   }
   const color = status === 'QUARANTINED' ? '#ff3d6e' : status === 'SUSPICIOUS' ? '#ffd166' : '#00c8ff'
-  const data = history.map((h, i) => ({ i, v: h.score }))
+  const data  = history.map((h, i) => ({ i, v: h.score }))
   return (
     <ResponsiveContainer width="100%" height={44}>
       <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
         <defs>
           <linearGradient id={`sg-${status}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+            <stop offset="0%"   stopColor={color} stopOpacity={0.4} />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
         <Area
-          type="monotone"
-          dataKey="v"
-          stroke={color}
-          strokeWidth={1.5}
+          type="monotone" dataKey="v"
+          stroke={color} strokeWidth={1.5}
           fill={`url(#sg-${status})`}
-          dot={false}
-          isAnimationActive={false}
+          dot={false} isAnimationActive={false}
         />
         <RTooltip
           content={({ active, payload }) =>
@@ -79,12 +101,60 @@ function Sparkline({ history, status }) {
   )
 }
 
-export default function NodeCard({ node, onRelease, history }) {
+/* ── NodeCard ───────────────────────────────────────────────── */
+export default function NodeCard({ node, onRelease, onSelect, history }) {
   const scoreClass = getScoreClass(node.anomaly_score)
-  const threats = node.active_threats ?? []
+  const threats    = node.active_threats ?? []
+
+  // Two-step release confirmation state
+  const [confirmRelease, setConfirmRelease] = useState(false)
+  const [countdown, setCountdown]           = useState(5)
+  const countdownRef = useRef(null)
+
+  const cancelConfirm = useCallback((e) => {
+    e?.stopPropagation()
+    clearInterval(countdownRef.current)
+    setConfirmRelease(false)
+    setCountdown(5)
+  }, [])
+
+  const handleReleaseClick = (e) => {
+    e.stopPropagation()
+    setConfirmRelease(true)
+    setCountdown(5)
+    countdownRef.current = setInterval(() => {
+      setCountdown(c => {
+        if (c <= 1) {
+          clearInterval(countdownRef.current)
+          setConfirmRelease(false)
+          return 5
+        }
+        return c - 1
+      })
+    }, 1000)
+  }
+
+  const handleConfirmRelease = (e) => {
+    e.stopPropagation()
+    clearInterval(countdownRef.current)
+    setConfirmRelease(false)
+    setCountdown(5)
+    onRelease(node.node_id)
+  }
+
+  // Cleanup countdown on unmount or status change away from QUARANTINED
+  useEffect(() => {
+    if (node.status !== 'QUARANTINED' && confirmRelease) cancelConfirm()
+  }, [node.status]) // eslint-disable-line
+  useEffect(() => () => clearInterval(countdownRef.current), [])
 
   return (
-    <div className={`node-card ${node.status}`}>
+    <div
+      id={`node-${node.node_id}`}
+      className={`node-card ${node.status}`}
+      onClick={() => onSelect?.(node)}
+      style={{ cursor: 'pointer' }}
+    >
       {/* Animated background glow for quarantined */}
       {node.status === 'QUARANTINED' && <div className="card-threat-overlay" />}
 
@@ -196,12 +266,35 @@ export default function NodeCard({ node, onRelease, history }) {
         </div>
       )}
 
-      {/* Manual release */}
-      {node.status === 'QUARANTINED' && onRelease && (
-        <button className="release-btn" onClick={() => onRelease(node.node_id)}>
+      {/* ── Two-step Manual Release ─────────────────────── */}
+      {node.status === 'QUARANTINED' && onRelease && !confirmRelease && (
+        <button className="release-btn" onClick={handleReleaseClick}>
           ⚡ Manual Release
         </button>
       )}
+
+      {node.status === 'QUARANTINED' && confirmRelease && (
+        <div className="confirm-release-panel" onClick={e => e.stopPropagation()}>
+          <div className="confirm-release-msg">
+            ⚠ Release <strong>{node.node_id}</strong> from quarantine?
+            <br />This removes the current isolation. Auto-cancels in {countdown}s.
+          </div>
+          <div className="confirm-release-btns">
+            <button className="confirm-yes-btn" onClick={handleConfirmRelease}>Yes, Release</button>
+            <button className="confirm-cancel-btn" onClick={cancelConfirm}>Cancel</button>
+          </div>
+          <div className="confirm-progress-bar">
+            <div className="confirm-progress-fill" style={{ width: `${(countdown / 5) * 100}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Click hint */}
+      <div style={{ marginTop: 8, fontSize: 8, color: 'var(--text-muted)', letterSpacing: '0.06em', textAlign: 'right', opacity: 0.6 }}>
+        click to expand ↗
+      </div>
     </div>
   )
 }
+
+
