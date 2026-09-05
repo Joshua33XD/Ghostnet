@@ -1,13 +1,9 @@
 {
   "version": 2,
+  "framework": "vite",
   "buildCommand": "cd dashboard && npm install && npm run build",
   "outputDirectory": "dashboard/dist",
   "rewrites": [
-    { "source": "/nodes",              "destination": "/ghostnet/api/main.py" },
-    { "source": "/nodes/:path*",       "destination": "/ghostnet/api/main.py" },
-    { "source": "/alerts",             "destination": "/ghostnet/api/main.py" },
-    { "source": "/ingest/:path*",      "destination": "/ghostnet/api/main.py" },
-    { "source": "/ws/:path*",          "destination": "/ghostnet/api/main.py" },
-    { "source": "/(.*)",               "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
