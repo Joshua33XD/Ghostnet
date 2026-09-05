@@ -1,6 +1,7 @@
 # =============================================================================
 # GhostNet — config.py  (full threat-expansion edition)
 # =============================================================================
+import os
 
 # ── MQTT Broker ───────────────────────────────────────────────────────────────
 MQTT_BROKER_HOST: str = "localhost"
@@ -10,7 +11,8 @@ MQTT_SUBSCRIBE_PATTERN: str = "ghostnet/#"
 
 # ── API ───────────────────────────────────────────────────────────────────────
 API_HOST: str = "0.0.0.0"
-API_PORT: int = 8000
+# Railway injects $PORT; fall back to 8000 for local dev
+API_PORT: int = int(os.environ.get("PORT", 8000))
 
 # ── EWMA ─────────────────────────────────────────────────────────────────────
 EWMA_ALPHA: float = 0.3
