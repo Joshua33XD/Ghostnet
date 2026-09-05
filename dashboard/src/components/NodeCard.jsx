@@ -1,7 +1,9 @@
-// NodeCard — full visual upgrade with sparkline + radial score gauge
+// NodeCard — full visual upgrade with sparkline + radial score gauge + v3 OSI/ML badges
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getScoreClass, getStatusIcon, formatElapsed, formatRate, formatBytes } from '../utils.js'
 import ThreatBadge from './ThreatBadge.jsx'
+import OSIBadge from './OSIBadge.jsx'
+import MLScore from './MLScore.jsx'
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip
 } from 'recharts'
@@ -191,6 +193,43 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
         </div>
         <Sparkline history={history} status={node.status} />
       </div>
+
+      {/* v3: OSI + ML badges row */}
+      {(node.osi_layer || !node.ml_warmup) && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+          {node.osi_layer && (
+            <OSIBadge
+              layer={node.osi_layer}
+              layerName={node.osi_layer_name}
+              category={node.attack_category}
+              confidence={node.osi_confidence ?? 0}
+              evidence={node.osi_evidence ?? []}
+              mini
+            />
+          )}
+          <MLScore
+            mlScore={node.ml_score ?? 0}
+            mlAnomaly={node.ml_anomaly ?? false}
+            mlConfidence={node.ml_confidence ?? 0}
+            mlWarmup={node.ml_warmup ?? true}
+            mlSampleCount={node.ml_sample_count ?? 0}
+            mini
+          />
+          {node.fusion_score > 0 && (
+            <span
+              title={`Fusion score: ${(node.fusion_score * 100).toFixed(0)}% (det + ML combined)`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '2px 7px', borderRadius: 10, fontSize: 10, fontWeight: 700,
+                background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.4)',
+                color: '#a78bfa', cursor: 'help',
+              }}
+            >
+              ⚡ {(node.fusion_score * 100).toFixed(0)}%
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Stats grid */}
       <div className="node-stats">

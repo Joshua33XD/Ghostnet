@@ -9,6 +9,8 @@ dependencies = [
     "websockets==12.0",
     "paho-mqtt==1.6.1",
     "rich==13.7.1",
+    "scikit-learn>=1.4.0",
+    "numpy>=1.26.0",
 ]
 
 [tool.vercel]

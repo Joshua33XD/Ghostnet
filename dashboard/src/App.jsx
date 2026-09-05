@@ -1,4 +1,3 @@
-// App.jsx — root layout with drawer, status filter, trend snapshots and skeletons
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useGhostNet } from './useGhostNet.js'
 import Header        from './components/Header.jsx'
@@ -8,9 +7,10 @@ import NodeCard, { NodeCardSkeleton } from './components/NodeCard.jsx'
 import EventLog       from './components/EventLog.jsx'
 import ThreatRadar    from './components/ThreatRadar.jsx'
 import NodeDetailDrawer from './components/NodeDetailDrawer.jsx'
+import { PieChart, Pie, Cell, Tooltip as RTooltip, ResponsiveContainer } from 'recharts'
 
 export default function App() {
-  const { nodes, events, wsStatus, releaseNode, scoreHistory } = useGhostNet()
+  const { nodes, events, wsStatus, releaseNode, scoreHistory, osiSummary } = useGhostNet()
 
   // ── Drawer state ────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState(null)
@@ -83,6 +83,36 @@ export default function App() {
           activeFilter={statusFilter}
           onFilterStatus={handleFilterStatus}
         />
+
+        {/* v3: OSI distribution panel */}
+        {Object.keys(osiSummary.layers ?? {}).length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            padding: '8px 16px', margin: '0 0 8px 0',
+            background: 'rgba(0,200,255,0.04)', borderRadius: 8,
+            border: '1px solid rgba(0,200,255,0.12)', flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+              OSI Distribution
+            </span>
+            <div style={{ display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' }}>
+              {Object.entries(osiSummary.layers).map(([k, v]) => (
+                <span key={k} style={{
+                  fontSize: 10, padding: '2px 8px', borderRadius: 8,
+                  background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.25)',
+                  color: '#67e8f9',
+                }}>
+                  {k}: <strong>{v}</strong>
+                </span>
+              ))}
+            </div>
+            {osiSummary.incident_count > 0 && (
+              <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>
+                🧬 {osiSummary.incident_count} incident{osiSummary.incident_count !== 1 ? 's' : ''} in memory
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="main-content">
           {/* Centre: threat radar + node cards */}

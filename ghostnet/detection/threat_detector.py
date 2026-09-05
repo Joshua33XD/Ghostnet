@@ -1,12 +1,14 @@
 # =============================================================================
-# GhostNet — detection/threat_detector.py
-# Master threat detector — runs all 10 detectors each cycle, updates state,
-# logs every result (triggered or not) for full transparency.
+# GhostNet v3 — detection/threat_detector.py
+# Master threat detector — runs all 10 detectors each cycle, then adds:
+#   • ML anomaly score  (IsolationForest)
+#   • OSI classification
+#   • Immune memory similarity search
+#   • Threat fusion into final score
 # =============================================================================
 from __future__ import annotations
 
 import threading
-import time
 from typing import List
 
 from ghostnet import config, logger
@@ -16,6 +18,10 @@ from ghostnet.detection.detectors import (
     config_tamper, brute_force, network_anomaly,
 )
 from ghostnet.detection.detectors.base import ThreatResult
+from ghostnet.detection.ml_detector import MLAnomalyDetector
+from ghostnet.detection.threat_fusion import ThreatFusion
+from ghostnet.memory.immune_memory import ImmuneMemory
+from ghostnet.osi.mapper import OSIMapper
 from ghostnet.storage.state_store import NodeStatus, StateStore
 
 _ALL_DETECTORS = [
@@ -42,19 +48,37 @@ THREAT_LABELS = {
 class ThreatDetector:
     """
     Runs every cycle for every node.
-    Returns a list of ThreatResults and updates:
-      - active_threats on the node
-      - anomaly_score (max of individual contributions, EWMA smoothed)
+
+    Pipeline per node:
+      1. Run all 10 deterministic detectors  -> List[ThreatResult]
+      2. Score ML IsolationForest            -> MLResult
+      3. Classify triggered threats via OSI  -> List[OSIResult]
+      4. Query immune memory for similarity  -> List[MemoryMatch]
+      5. Fuse all signals                    -> FusionResult
+      6. Update StateStore with all results
     """
 
     def __init__(self, store: StateStore) -> None:
-        self._store = store
+        self._store    = store
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        # v3 components (singletons, shared across all nodes)
+        self._ml      = MLAnomalyDetector()
+        self._osi     = OSIMapper()
+        self._fusion  = ThreatFusion()
+        self._memory  = ImmuneMemory()
+
+    # Expose memory reference so QuarantineManager can record incidents
+    @property
+    def immune_memory(self) -> ImmuneMemory:
+        return self._memory
 
     def start(self) -> None:
-        logger.info(f"Threat detector started — running {len(_ALL_DETECTORS)} detectors "
-                    f"every {config.DETECTION_INTERVAL_SECS}s.")
+        logger.info(
+            f"Threat detector started — {len(_ALL_DETECTORS)} deterministic detectors "
+            f"+ ML (IsolationForest) + OSI mapper + immune memory "
+            f"every {config.DETECTION_INTERVAL_SECS}s."
+        )
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True, name="ThreatDetector")
         self._thread.start()
@@ -77,37 +101,55 @@ class ThreatDetector:
         if node is None:
             return []
 
+        # -- Step 1: Run 10 deterministic detectors ----------------------------
         results: List[ThreatResult] = []
-        newly_triggered: List[ThreatResult] = []
-        cleared_threats: List[ThreatResult] = []
-
         for detector in _ALL_DETECTORS:
             result = detector.detect(node)
             results.append(result)
 
-            label = THREAT_LABELS.get(result.name, result.name)
+            label      = THREAT_LABELS.get(result.name, result.name)
             was_active = result.name in node.active_threats
 
             if result.triggered:
                 if not was_active:
-                    newly_triggered.append(result)
                     logger.threat_detected(node_id, label, result.severity, result.message)
             else:
                 if was_active:
-                    cleared_threats.append(result)
                     logger.threat_cleared(node_id, label)
 
-        # Update active threats set on node
+        # Update active threats set
         active = {r.name for r in results if r.triggered}
         self._store.update_active_threats(node_id, active)
 
-        # Update EWMA anomaly score from threat contributions
-        if results:
-            # Use the max individual contribution as the primary signal
-            max_contrib = max((r.score_contribution for r in results), default=0.0)
-            alpha = config.EWMA_ALPHA
-            old_score = node.anomaly_score
-            new_score = alpha * max_contrib + (1 - alpha) * old_score
-            self._store.update_score_only(node_id, new_score, old_score)
+        # -- Step 2: ML anomaly score ------------------------------------------
+        ml_result = self._ml.score(node)
+        self._store.set_ml_result(node_id, ml_result)
+
+        if not ml_result.warmup and ml_result.ml_anomaly:
+            logger.info(
+                f"[ML] Anomaly detected — score={ml_result.ml_score:.3f} "
+                f"confidence={ml_result.ml_confidence:.2f}",
+                node_id=node_id,
+            )
+
+        # -- Step 3: OSI classification for triggered threats ------------------
+        triggered_names = [r.name for r in results if r.triggered]
+        osi_results = self._osi.classify_all(triggered_names, node)
+        primary_osi = self._osi.primary(osi_results)
+        self._store.set_osi_result(node_id, primary_osi)
+
+        # -- Step 4: Query immune memory for similar patterns ------------------
+        memory_matches = self._memory.find_similar(node_id, ml_result.top_features)
+        if memory_matches:
+            top = memory_matches[0]
+            logger.info(
+                f"[Memory] Match #{top.incident_id} similarity={top.similarity:.2f} "
+                f"— {top.attack_category}",
+                node_id=node_id,
+            )
+
+        # -- Step 5: Threat fusion ---------------------------------------------
+        fusion_result = self._fusion.fuse(node, results, ml_result, osi_results, memory_matches)
+        self._store.set_fusion_result(node_id, fusion_result)
 
         return results

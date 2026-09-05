@@ -8,7 +8,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from ghostnet import logger
 
@@ -81,6 +81,26 @@ class NodeState:
     # ── Threat-specific recovery clean-streak counters ────────────────────────
     threat_clean_streaks: Dict[str, int] = field(default_factory=dict)
 
+    # ── v3: ML anomaly detector results ───────────────────────────────────────
+    ml_score:       float = 0.0
+    ml_anomaly:     bool  = False
+    ml_confidence:  float = 0.0
+    ml_warmup:      bool  = True
+    ml_features:    List[dict] = field(default_factory=list)   # [{name, value}, ...]
+    ml_sample_count: int  = 0
+
+    # ── v3: OSI classification ─────────────────────────────────────────────────
+    osi_layer:       Optional[int] = None
+    osi_layer_name:  str           = "Unknown"
+    attack_category: str           = "None"
+    osi_confidence:  float         = 0.0
+    osi_evidence:    List[str]     = field(default_factory=list)
+
+    # ── v3: Threat fusion ──────────────────────────────────────────────────────
+    fusion_score:       float = 0.0
+    fusion_confidence:  float = 0.0
+    memory_matches:     List[dict] = field(default_factory=list)  # [{incident_id, similarity, ...}]
+
     # Ring-buffer size
     _RING_SIZE: int = field(default=60, init=False, repr=False)
 
@@ -105,6 +125,21 @@ class NodeState:
             "last_firmware_hash": self.last_firmware_hash,
             "last_config_hash":   self.last_config_hash,
             "seen_topics_count":  len(self.seen_topics),
+            # ── v3 fields (all optional-safe defaults) ──────────────────────
+            "ml_score":           round(self.ml_score, 4),
+            "ml_anomaly":         self.ml_anomaly,
+            "ml_confidence":      round(self.ml_confidence, 3),
+            "ml_warmup":          self.ml_warmup,
+            "ml_features":        self.ml_features,
+            "ml_sample_count":    self.ml_sample_count,
+            "osi_layer":          self.osi_layer,
+            "osi_layer_name":     self.osi_layer_name,
+            "attack_category":    self.attack_category,
+            "osi_confidence":     round(self.osi_confidence, 3),
+            "osi_evidence":       self.osi_evidence,
+            "fusion_score":       round(self.fusion_score, 4),
+            "fusion_confidence":  round(self.fusion_confidence, 3),
+            "memory_matches":     self.memory_matches,
         }
 
     # ── Ring-buffer helpers ────────────────────────────────────────────────────
@@ -322,3 +357,41 @@ class StateStore:
             node.threat_history.append(entry)
             if len(node.threat_history) > 200:
                 node.threat_history.pop(0)
+
+    # ── v3: ML / OSI / Fusion setters ─────────────────────────────────────────
+
+    def set_ml_result(self, node_id: str, ml_result) -> None:
+        """Store MLResult fields on the node state."""
+        with self._lock:
+            node = self.get_or_create(node_id)
+            node.ml_score        = ml_result.ml_score
+            node.ml_anomaly      = ml_result.ml_anomaly
+            node.ml_confidence   = ml_result.ml_confidence
+            node.ml_warmup       = ml_result.warmup
+            node.ml_sample_count = ml_result.sample_count
+            node.ml_features     = [{"name": n, "value": round(v, 3)}
+                                     for n, v in ml_result.top_features]
+
+    def set_osi_result(self, node_id: str, osi_result) -> None:
+        """Store the primary OSI classification on the node state."""
+        with self._lock:
+            node = self.get_or_create(node_id)
+            node.osi_layer       = osi_result.osi_layer
+            node.osi_layer_name  = osi_result.osi_layer_name
+            node.attack_category = osi_result.attack_category
+            node.osi_confidence  = osi_result.confidence
+            node.osi_evidence    = osi_result.evidence
+
+    def set_fusion_result(self, node_id: str, fusion_result) -> None:
+        """Store ThreatFusion result on the node state and update anomaly_score."""
+        with self._lock:
+            node = self.get_or_create(node_id)
+            old_score               = node.anomaly_score
+            node.fusion_score       = fusion_result.final_score
+            node.fusion_confidence  = fusion_result.confidence
+            node.memory_matches     = [m.to_dict() for m in fusion_result.memory_matches]
+            # Use EWMA-smooth the fusion score into anomaly_score
+            from ghostnet import config as _cfg
+            alpha = _cfg.EWMA_ALPHA
+            node.anomaly_score = alpha * fusion_result.final_score + (1 - alpha) * old_score
+

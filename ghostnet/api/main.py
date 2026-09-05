@@ -144,3 +144,91 @@ async def websocket_events(ws: WebSocket) -> None:
     finally:
         if q in _ws_queues:
             _ws_queues.remove(q)
+
+
+# ── v3: ML endpoints ───────────────────────────────────────────────────────────
+
+# Shared v3 component references (set by engine via set_v3_components)
+_ml_detector   = None
+_immune_memory = None
+
+
+def set_v3_components(ml_detector, immune_memory) -> None:
+    """Called by engine.py to wire v3 components into the API."""
+    global _ml_detector, _immune_memory
+    _ml_detector   = ml_detector
+    _immune_memory = immune_memory
+
+
+@app.get("/ml/status", tags=["ML"])
+def ml_status() -> Dict[str, Any]:
+    """
+    ML model warmup status for all nodes.
+    Returns sample count, warmup flag, and whether model is fitted.
+    """
+    if _ml_detector is None:
+        return {"status": "ML detector not initialised"}
+    return _ml_detector.status()
+
+
+@app.post("/ml/retrain/{node_id}", tags=["ML"])
+def ml_retrain(node_id: str) -> Dict[str, Any]:
+    """
+    Explicitly retrain the Isolation Forest model for a node.
+    Safe, reproducible, and reversible — model saved to disk.
+    Only triggers if enough samples have been collected (>= ML_N_WARMUP).
+    """
+    if _ml_detector is None:
+        raise HTTPException(503, "ML detector not initialised.")
+    success = _ml_detector.retrain(node_id)
+    return {"node_id": node_id, "retrained": success}
+
+
+# ── v3: Immune Memory endpoints ────────────────────────────────────────────────
+
+@app.get("/memory/incidents", tags=["ImmuneMemory"])
+def get_all_incidents(limit: int = 100) -> List[dict]:
+    """List all recorded security incidents from immune memory."""
+    if _immune_memory is None:
+        return []
+    return _immune_memory.get_incidents(limit=limit)
+
+
+@app.get("/memory/incidents/{node_id}", tags=["ImmuneMemory"])
+def get_node_incidents(node_id: str, limit: int = 50) -> List[dict]:
+    """List security incidents for a specific node."""
+    if _immune_memory is None:
+        return []
+    return _immune_memory.get_incidents(node_id=node_id, limit=limit)
+
+
+# ── v3: OSI distribution ───────────────────────────────────────────────────────
+
+@app.get("/osi/summary", tags=["OSI"])
+def osi_summary() -> Dict[str, Any]:
+    """
+    OSI layer distribution across all monitored nodes.
+    Returns counts per layer and per attack category.
+    """
+    if _state_store is None:
+        return {"layers": {}, "categories": {}}
+
+    nodes   = _state_store.all_nodes()
+    layers: Dict[str, int]     = {}
+    cats:   Dict[str, int]     = {}
+
+    for node in nodes:
+        if node.osi_layer is not None:
+            key = f"L{node.osi_layer} {node.osi_layer_name}"
+            layers[key] = layers.get(key, 0) + 1
+        cat = node.attack_category
+        if cat and cat != "None":
+            cats[cat] = cats.get(cat, 0) + 1
+
+    return {
+        "layers":     layers,
+        "categories": cats,
+        "total_nodes": len(nodes),
+        "incident_count": _immune_memory.count() if _immune_memory else 0,
+    }
+

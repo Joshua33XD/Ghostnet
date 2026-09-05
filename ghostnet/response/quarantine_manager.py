@@ -1,13 +1,12 @@
 # =============================================================================
-# GhostNet — response/quarantine_manager.py  (full protect + heal edition)
+# GhostNet v3 — response/quarantine_manager.py
 #
-# Per-threat protect → heal lifecycle:
+# Extends the original protect->heal lifecycle with:
+#   • Explicit verification step before recovery (score + active_threats check)
+#   • ImmuneMemory.record_incident() called after confirmed recovery
+#   • recovery_verified flag distinguishes "fully clean" vs "threshold passed"
 #
-#   1. ThreatDetector fires → active_threats updated on node
-#   2. QuarantineManager reads active threats → sends protection command
-#   3. Each cycle: checks if threat still active
-#      - Still active  → maintain protection, log status
-#      - Cleared       → increment clean streak, send heal command when streak hits RECOVERY_WINDOW
+# Original logic is preserved exactly; v3 additions are clearly marked.
 # =============================================================================
 from __future__ import annotations
 
@@ -25,7 +24,7 @@ from ghostnet.detection.detectors.base import (
 )
 from ghostnet.storage.state_store import NodeStatus, StateStore
 
-# Map threat name → (protect_response, heal_response, description)
+# Map threat name -> (protect_response, heal_response, description)
 THREAT_RESPONSES = {
     "dos_flood":           (RESPONSE_QUARANTINE,       RESPONSE_RELEASE,          "Network isolated to stop flood."),
     "mqtt_abuse":          (RESPONSE_QUARANTINE,       RESPONSE_RELEASE,          "MQTT client isolated due to topic abuse."),
@@ -54,18 +53,23 @@ HUMAN_LABELS = {
 
 
 class QuarantineManager:
-    def __init__(self, store: StateStore, publish_fn=None) -> None:
+    def __init__(self, store: StateStore, publish_fn=None, immune_memory=None) -> None:
         self._store   = store
         self._publish = publish_fn
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         # Track which protection commands have already been sent
-        # { node_id → set(threat_name) }
+        # { node_id -> set(threat_name) }
         self._sent_protect: dict = {}
-        # { node_id → { threat_name → clean_streak } }
+        # { node_id -> { threat_name -> clean_streak } }
         self._heal_streaks: dict = {}
+        # v3: ImmuneMemory reference (optional for backward compat)
+        self._memory = immune_memory
+        # v3: track last protect command and det_results per node for incident recording
+        self._last_response: dict = {}   # { node_id -> str }
+        self._last_det_results: dict = {}  # { node_id -> List[ThreatResult] }
 
-    # ── Lifecycle ──────────────────────────────────────────────────────────────
+    # -- Lifecycle --------------------------------------------------------------
     def start(self) -> None:
         logger.info(
             f"Quarantine manager started "
@@ -87,7 +91,7 @@ class QuarantineManager:
         while not self._stop_event.wait(config.DETECTION_INTERVAL_SECS):
             self.evaluate_all()
 
-    # ── Core evaluation ────────────────────────────────────────────────────────
+    # -- Core evaluation -------------------------------------------------------
     def evaluate_all(self) -> None:
         for node in self._store.all_nodes():
             self._evaluate_node(node.node_id)
@@ -101,7 +105,7 @@ class QuarantineManager:
         sent_protect   = self._sent_protect.setdefault(node_id, set())
         heal_streaks   = self._heal_streaks.setdefault(node_id, {})
 
-        # ── STEP 1: Apply protection for newly triggered threats ───────────────
+        # -- STEP 1: Apply protection for newly triggered threats --------------
         for threat_name in active_threats:
             if threat_name not in sent_protect:
                 protect_cmd, _, reason = THREAT_RESPONSES.get(
@@ -112,17 +116,18 @@ class QuarantineManager:
                 self._send_command(node_id, protect_cmd)
                 sent_protect.add(threat_name)
                 heal_streaks[threat_name] = 0
+                # v3: track last response for incident recording
+                self._last_response[node_id] = protect_cmd
 
-                # Quarantine the node in state store if the response involves isolation
                 if protect_cmd == RESPONSE_QUARANTINE and node.status != NodeStatus.QUARANTINED:
                     score = node.anomaly_score
                     logger.attack_detected(node_id, score)
                     self._store.mark_quarantined(node_id)
 
-        # ── STEP 2: Self-heal threats that have cleared ────────────────────────
+        # -- STEP 2: Self-heal threats that have cleared -----------------------
         cleared = sent_protect - active_threats
         for threat_name in list(cleared):
-            label = HUMAN_LABELS.get(threat_name, threat_name)
+            label  = HUMAN_LABELS.get(threat_name, threat_name)
             streak = heal_streaks.get(threat_name, 0) + 1
             heal_streaks[threat_name] = streak
 
@@ -146,7 +151,7 @@ class QuarantineManager:
                     node_id=node_id,
                 )
 
-        # ── STEP 3: Overall node recovery ─────────────────────────────────────
+        # -- STEP 3: Overall node recovery -------------------------------------
         if not active_threats and not sent_protect:
             if node.status == NodeStatus.QUARANTINED:
                 score = node.anomaly_score
@@ -155,20 +160,94 @@ class QuarantineManager:
                     streak = node.quarantine_clean_streak
                     logger.quarantine_check(node_id, score, streak, config.RECOVERY_WINDOW)
                     if streak >= config.RECOVERY_WINDOW:
+                        # v3: verify health before release
+                        verified = self._verify_health(node_id)
                         self._store.mark_recovered(node_id)
                         self._send_command(node_id, RESPONSE_RELEASE)
+                        # v3: record incident in immune memory
+                        self._record_recovery_incident(node_id, RESPONSE_RELEASE, recovered=verified)
                 else:
                     self._store.reset_clean_streak(node_id)
             elif node.status == NodeStatus.SUSPICIOUS and node.anomaly_score < config.RECOVERY_THRESHOLD:
                 self._store.set_status(node_id, NodeStatus.HEALTHY)
                 logger.info("Score normalised — status returned to HEALTHY.", node_id=node_id)
 
-        # ── STEP 4: Escalate to QUARANTINE if overall score still high ─────────
+        # -- STEP 4: Escalate to QUARANTINE if overall score still high ---------
         elif node.status in (NodeStatus.HEALTHY, NodeStatus.SUSPICIOUS):
             if node.anomaly_score >= config.ANOMALY_THRESHOLD:
                 logger.attack_detected(node_id, node.anomaly_score)
                 self._store.mark_quarantined(node_id)
                 self._send_command(node_id, RESPONSE_QUARANTINE)
+                self._last_response[node_id] = RESPONSE_QUARANTINE
+
+    # -- v3: Health verification -----------------------------------------------
+    def _verify_health(self, node_id: str) -> bool:
+        """
+        Verification step before release.
+        Checks score < threshold AND no active threats remain.
+        Returns True if the node is genuinely clean.
+        """
+        node = self._store.get(node_id)
+        if node is None:
+            return False
+        clean_score  = node.anomaly_score < config.RECOVERY_THRESHOLD
+        clean_threats = len(node.active_threats) == 0
+        verified = clean_score and clean_threats
+        if verified:
+            logger.info("[v3] Health verification PASSED — node confirmed clean.", node_id=node_id)
+        else:
+            logger.warn("[v3] Health verification PARTIAL — releasing anyway (streak met).", node_id=node_id)
+        return verified
+
+    # -- v3: Record incident in immune memory ----------------------------------
+    def _record_recovery_incident(self, node_id: str, response: str, recovered: bool) -> None:
+        if self._memory is None:
+            return
+        node = self._store.get(node_id)
+        if node is None:
+            return
+        try:
+            # Build lightweight stubs so we don't need to pass full objects
+            from ghostnet.osi.mapper import OSIResult
+            from ghostnet.detection.ml_detector import MLResult
+            from ghostnet.detection.threat_fusion import FusionResult
+
+            osi = OSIResult(
+                osi_layer=node.osi_layer,
+                osi_layer_name=node.osi_layer_name,
+                attack_category=node.attack_category,
+                confidence=node.osi_confidence,
+                evidence=node.osi_evidence,
+            )
+
+            # Reconstruct a minimal MLResult from stored node fields
+            class _ML:
+                ml_score     = node.ml_score
+                ml_anomaly   = node.ml_anomaly
+                ml_confidence = node.ml_confidence
+                warmup       = node.ml_warmup
+                sample_count = node.ml_sample_count
+                top_features = [(f["name"], f["value"]) for f in node.ml_features]
+
+            class _Det:
+                name      = ""
+                triggered = False
+
+            class _Fusion:
+                final_score = node.fusion_score
+                confidence  = node.fusion_confidence
+
+            self._memory.record_incident(
+                node_id     = node_id,
+                osi_result  = osi,
+                det_results = [],   # lightweight — detailed results not re-captured here
+                ml_result   = _ML(),
+                fusion_result = _Fusion(),
+                response    = response,
+                recovered   = recovered,
+            )
+        except Exception as exc:
+            logger.error(f"[Memory] Failed to record incident: {exc}", node_id=node_id)
 
     def _send_command(self, node_id: str, command: str) -> None:
         topic = f"{config.MQTT_TOPIC_ROOT}/{node_id}/command"
@@ -179,4 +258,4 @@ class QuarantineManager:
             except Exception as exc:
                 logger.error(f"Failed to publish {command!r}: {exc}", node_id=node_id)
         else:
-            logger.info(f"[No MQTT publish] Would send {command!r} → {topic}", node_id=node_id)
+            logger.info(f"[No MQTT publish] Would send {command!r} -> {topic}", node_id=node_id)

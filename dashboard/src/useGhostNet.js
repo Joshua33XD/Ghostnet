@@ -29,6 +29,7 @@ export function useGhostNet() {
   const [events, setEvents] = useState([])      // ring buffer of log events
   const [scoreHistory, setScoreHistory] = useState({}) // { node_id: [{t, score}] }
   const [wsStatus, setWsStatus] = useState('connecting')
+  const [osiSummary, setOsiSummary] = useState({ layers: {}, categories: {}, incident_count: 0 })
   const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
   const eventIdRef = useRef(0)
@@ -57,6 +58,16 @@ export function useGhostNet() {
     } catch {
       // backend not ready yet
     }
+  }, [])
+
+  // ── Fetch OSI summary (v3) ────────────────────────────────────────────────
+  const fetchOSI = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/osi/summary`)
+      if (!res.ok) return
+      const data = await res.json()
+      setOsiSummary(data)
+    } catch { /* backend not ready */ }
   }, [])
 
   // ── Release a quarantined node ────────────────────────────────────────────
@@ -110,17 +121,20 @@ export function useGhostNet() {
     }
   }, [pushEvent])
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  // ── Lifecycle ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     connect()
     fetchNodes()
-    const poll = setInterval(fetchNodes, POLL_INTERVAL_MS)
+    fetchOSI()
+    const poll    = setInterval(fetchNodes, POLL_INTERVAL_MS)
+    const osiPoll = setInterval(fetchOSI,   5000)
     return () => {
       clearInterval(poll)
+      clearInterval(osiPoll)
       clearTimeout(reconnectTimer.current)
       wsRef.current?.close()
     }
-  }, [connect, fetchNodes])
+  }, [connect, fetchNodes, fetchOSI])
 
-  return { nodes, events, wsStatus, releaseNode, scoreHistory }
+  return { nodes, events, wsStatus, releaseNode, scoreHistory, osiSummary }
 }

@@ -1,5 +1,5 @@
 # =============================================================================
-# GhostNet — config.py  (full threat-expansion edition)
+# GhostNet — config.py  (v3: OSI-aware, ML-assisted, immune memory)
 # =============================================================================
 import os
 
@@ -69,3 +69,24 @@ AUTH_FAIL_LIMIT:          int   = 5
 
 # 10. Network anomaly (EWMA multi-signal)
 NETWORK_ANOMALY_SIGMA:    float = 2.5     # std-dev multiplier for EWMA deviation
+
+# ══════════════════════════════════════════════════════════════════════════════
+# v3: Threat Fusion weights
+# ══════════════════════════════════════════════════════════════════════════════
+FUSION_WEIGHT_DET: float = float(os.environ.get("FUSION_WEIGHT_DET", 0.70))
+FUSION_WEIGHT_ML:  float = float(os.environ.get("FUSION_WEIGHT_ML",  0.30))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# v3: ML Anomaly Detector (Isolation Forest)
+# ══════════════════════════════════════════════════════════════════════════════
+ML_N_WARMUP:        int   = int(os.environ.get("ML_N_WARMUP", 50))    # samples before scoring
+ML_N_ESTIMATORS:    int   = int(os.environ.get("ML_N_ESTIMATORS", 100))
+ML_CONTAMINATION:   float = float(os.environ.get("ML_CONTAMINATION", 0.05))  # expected anomaly fraction
+ML_MODEL_DIR:       str   = os.environ.get("ML_MODEL_DIR", "data/ml_models")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# v3: Immune Memory
+# ══════════════════════════════════════════════════════════════════════════════
+MEMORY_DB_PATH:              str   = os.environ.get("MEMORY_DB_PATH", "data/immune_memory.db")
+MEMORY_SIMILARITY_THRESHOLD: float = float(os.environ.get("MEMORY_SIMILARITY_THRESHOLD", 0.80))
+MEMORY_TOP_K:                int   = int(os.environ.get("MEMORY_TOP_K", 3))

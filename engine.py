@@ -22,7 +22,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from ghostnet import config, logger
-from ghostnet.api.main import app, set_state_store
+from ghostnet.api.main import app, set_state_store, set_v3_components
 from ghostnet.detection.threat_detector import ThreatDetector
 from ghostnet.detection.heartbeat_monitor import HeartbeatMonitor
 from ghostnet.mqtt_client import MQTTClient
@@ -83,11 +83,16 @@ def main() -> None:
 
     # ── 3. Response + self-healing ─────────────────────────────────────────────
     logger.info("Starting quarantine + self-heal manager …")
-    qm = QuarantineManager(store, publish_fn=mqtt_client.publish)
+    qm = QuarantineManager(store, publish_fn=mqtt_client.publish,
+                           immune_memory=threat_detector.immune_memory)
     qm.start()
 
-    # ── 4. API ────────────────────────────────────────────────────────────────
+    # ── 4. API ─────────────────────────────────────────────────────────────────────────
     set_state_store(store)
+    set_v3_components(
+        ml_detector=threat_detector._ml,
+        immune_memory=threat_detector.immune_memory,
+    )
 
     # ── Graceful shutdown ──────────────────────────────────────────────────────
     stop_event = threading.Event()
