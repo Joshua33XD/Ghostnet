@@ -1,9 +1,10 @@
 // NodeCard — full visual upgrade with sparkline + radial score gauge + v3 OSI/ML badges
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getScoreClass, getStatusIcon, formatElapsed, formatRate, formatBytes } from '../utils.js'
+import { getScoreClass, getStatusIcon, formatElapsed, formatRate, formatBytes, getTrustScore, getTrustColor } from '../utils.js'
 import ThreatBadge from './ThreatBadge.jsx'
 import OSIBadge from './OSIBadge.jsx'
 import MLScore from './MLScore.jsx'
+import LifecycleStepper from './LifecycleStepper.jsx'
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip
 } from 'recharts'
@@ -30,26 +31,27 @@ export function NodeCardSkeleton() {
   )
 }
 
-/* ── Radial anomaly gauge ───────────────────────────────────── */
-function RadialGauge({ score }) {
-  const pct = Math.min(score, 1)
+/* ── Radial TRUST gauge (Trust = 1 – anomaly_score) ────────── */
+function RadialGauge({ anomalyScore }) {
+  const trust = getTrustScore(anomalyScore)
+  // The gauge arc fills clockwise with the trust percentage (high trust = almost full ring)
   const r = 28
   const circ = 2 * Math.PI * r
-  const dash = circ * pct
-  const color = pct >= 0.75 ? '#ff3d6e' : pct >= 0.5 ? '#ff8c42' : pct >= 0.25 ? '#ffd166' : '#00ff9d'
-  const glow = pct >= 0.75 ? 'rgba(255,61,110,0.6)' : pct >= 0.5 ? 'rgba(255,140,66,0.5)' : 'rgba(0,255,157,0.4)'
+  const dash = circ * trust
+  const color = getTrustColor(anomalyScore)
+  const glow = trust >= 0.75 ? 'rgba(0,255,157,0.5)' : trust >= 0.5 ? 'rgba(255,209,102,0.4)' : trust >= 0.25 ? 'rgba(255,140,66,0.5)' : 'rgba(255,61,110,0.6)'
 
   return (
     <svg width={72} height={72} viewBox="0 0 72 72">
       <defs>
-        <filter id={`glow-${Math.round(pct * 100)}`}>
+        <filter id={`glow-t-${Math.round(trust * 100)}`}>
           <feGaussianBlur stdDeviation="2.5" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
       </defs>
       {/* Track */}
       <circle cx={36} cy={36} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
-      {/* Fill */}
+      {/* Fill — high trust = nearly complete ring (green) */}
       <circle
         cx={36} cy={36} r={r}
         fill="none"
@@ -60,10 +62,14 @@ function RadialGauge({ score }) {
         transform="rotate(-90 36 36)"
         style={{ filter: `drop-shadow(0 0 4px ${glow})`, transition: 'stroke-dasharray 0.6s ease' }}
       />
-      {/* Label */}
-      <text x={36} y={39} textAnchor="middle" fontSize={11} fontWeight={700}
+      {/* Trust % label */}
+      <text x={36} y={33} textAnchor="middle" fontSize={10} fontWeight={700}
         fontFamily="JetBrains Mono, monospace" fill={color}>
-        {(pct * 100).toFixed(0)}%
+        {(trust * 100).toFixed(0)}%
+      </text>
+      <text x={36} y={44} textAnchor="middle" fontSize={7}
+        fontFamily="JetBrains Mono, monospace" fill="rgba(255,255,255,0.35)">
+        TRUST
       </text>
     </svg>
   )
@@ -106,6 +112,8 @@ function Sparkline({ history, status }) {
 /* ── NodeCard ───────────────────────────────────────────────── */
 export default function NodeCard({ node, onRelease, onSelect, history }) {
   const scoreClass = getScoreClass(node.anomaly_score)
+  const trust = getTrustScore(node.anomaly_score)
+  const trustColor = getTrustColor(node.anomaly_score)
   const threats = node.active_threats ?? []
 
   // Two-step release confirmation state
@@ -172,7 +180,7 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
           <span className={`node-status-pill ${node.status}`}>{node.status}</span>
-          <RadialGauge score={node.anomaly_score ?? 0} />
+          <RadialGauge anomalyScore={node.anomaly_score ?? 0} />
         </div>
       </div>
 
@@ -187,11 +195,15 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
       <div className="sparkline-wrap">
         <div className="sparkline-label">
           <span>EWMA Score History</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: scoreClass === 'critical' ? 'var(--red)' : scoreClass === 'high' ? 'var(--orange)' : 'var(--text-secondary)' }}>
-            {(node.anomaly_score ?? 0).toFixed(4)}
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: trustColor }}>
+            Trust {(trust * 100).toFixed(0)}%
           </span>
         </div>
         <Sparkline history={history} status={node.status} />
+        <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2, letterSpacing: '0.04em' }}
+          title="Trust = 100% − weighted(rule detectors 70%, ML anomaly 30%)">
+          raw anomaly {(node.anomaly_score ?? 0).toFixed(4)} · Trust = 1 − score
+        </div>
       </div>
 
       {/* v3: OSI + ML badges row */}
@@ -325,10 +337,26 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
         )}
       </div>
 
+      {/* Lifecycle stepper (compact) */}
+      <div style={{ marginTop: 10, marginBottom: 4 }}>
+        <LifecycleStepper status={node.status} reroutePath={node.reroute_path} compact />
+      </div>
+
       {/* Quarantine metadata */}
       {node.status === 'QUARANTINED' && node.quarantine_time && (
         <div className="quarantine-tag">
           🔒 Quarantined {formatElapsed(node.quarantine_time)} ago
+        </div>
+      )}
+      {/* Reroute badge */}
+      {node.status === 'QUARANTINED' && node.reroute_path && (
+        <div style={{
+          marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 700,
+          background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.45)',
+          color: '#c4b5fd', fontFamily: 'var(--font-mono)',
+        }}>
+          ⇄ Rerouted via {node.reroute_path}
         </div>
       )}
       {node.recovery_time && node.status === 'HEALTHY' && (

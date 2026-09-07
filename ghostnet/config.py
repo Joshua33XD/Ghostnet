@@ -90,3 +90,14 @@ ML_MODEL_DIR:       str   = os.environ.get("ML_MODEL_DIR", "data/ml_models")
 MEMORY_DB_PATH:              str   = os.environ.get("MEMORY_DB_PATH", "data/immune_memory.db")
 MEMORY_SIMILARITY_THRESHOLD: float = float(os.environ.get("MEMORY_SIMILARITY_THRESHOLD", 0.80))
 MEMORY_TOP_K:                int   = int(os.environ.get("MEMORY_TOP_K", 3))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RECONFIGURE — backup communication path pool
+# When a node is quarantined, traffic is rerouted via one of these gateway IDs
+# (round-robin). Clear this list to disable the RECONFIGURE stage.
+# ══════════════════════════════════════════════════════════════════════════════
+RECONFIGURE_BACKUP_PATHS: list = [
+    "gateway-backup-1",
+    "gateway-backup-2",
+    "gateway-backup-3",
+]

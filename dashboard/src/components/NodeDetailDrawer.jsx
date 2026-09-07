@@ -4,7 +4,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
-import { getStatusIcon, formatElapsed, formatRate, formatBytes } from '../utils.js'
+import { getStatusIcon, formatElapsed, formatRate, formatBytes, getTrustScore, getTrustColor } from '../utils.js'
+import LifecycleStepper from './LifecycleStepper.jsx'
 
 const TIMELINE_TAGS = new Set(['QUARANTINE', 'RECOVERED', 'RECOVERY-CHECK', 'SELF-HEAL', 'PROTECT'])
 
@@ -84,6 +85,11 @@ export default function NodeDetailDrawer({ node, history, events, onClose, onRel
           <button className="drawer-close" onClick={onClose} aria-label="Close drawer">✕</button>
         </div>
 
+        {/* ── Lifecycle Stepper ──────────────────────────── */}
+        <div style={{ padding: '10px 16px 0' }}>
+          <LifecycleStepper status={node.status} reroutePath={node.reroute_path} />
+        </div>
+
         {/* ── Scrollable body ────────────────────────────── */}
         <div className="drawer-body">
 
@@ -127,8 +133,16 @@ export default function NodeDetailDrawer({ node, history, events, onClose, onRel
             <div className="drawer-section-title">Node Statistics</div>
             <div className="drawer-stats-grid">
               <div className="drawer-stat">
+                <div className="drawer-stat-label">Trust Score</div>
+                <div className="drawer-stat-value" style={{ color: getTrustColor(node.anomaly_score ?? 0) }}
+                  title="Trust = 100% - weighted(rule detectors 70%, ML anomaly 30%)">
+                  {(getTrustScore(node.anomaly_score ?? 0) * 100).toFixed(0)}%
+                </div>
+              </div>
+              <div className="drawer-stat">
                 <div className="drawer-stat-label">Anomaly Score</div>
-                <div className="drawer-stat-value" style={{ color }}>{(node.anomaly_score ?? 0).toFixed(4)}</div>
+                <div className="drawer-stat-value" style={{ color }}
+                  title="Raw anomaly_score from threat fusion engine">{(node.anomaly_score ?? 0).toFixed(4)}</div>
               </div>
               <div className="drawer-stat">
                 <div className="drawer-stat-label">Msg Rate</div>
@@ -233,6 +247,16 @@ export default function NodeDetailDrawer({ node, history, events, onClose, onRel
         {/* ── Footer release action ───────────────────────── */}
         {node.status === 'QUARANTINED' && onRelease && (
           <div className="drawer-actions">
+            {node.reroute_path && (
+              <div style={{
+                marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 12px', borderRadius: 10, fontSize: 10, fontWeight: 700,
+                background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.4)',
+                color: '#c4b5fd', fontFamily: 'var(--font-mono)',
+              }}>
+                ⇄ Rerouted via {node.reroute_path}
+              </div>
+            )}
             <button
               className="release-btn"
               style={{ margin: 0, flex: 1 }}

@@ -1,4 +1,6 @@
 // StatsBar — summary counters with trend deltas and status filter
+import { getTrustScore } from '../utils.js'
+
 function TrendIndicator({ current, prev, isGoodUp = false }) {
   if (prev == null || prev === current) return <span className="stat-trend neutral">—</span>
   const delta = current - prev
@@ -40,6 +42,10 @@ export default function StatsBar({ nodes, prevCounts, activeFilter, onFilterStat
     </div>
   )
 
+  const avgTrust = list.length === 0
+    ? null
+    : list.reduce((acc, n) => acc + getTrustScore(n.anomaly_score), 0) / list.length
+
   return (
     <div className="stats-bar">
       {cell('Total Nodes',  total,       'cyan',   null,          'total')}
@@ -47,6 +53,24 @@ export default function StatsBar({ nodes, prevCounts, activeFilter, onFilterStat
       {cell('Suspicious',   suspicious,  'yellow', 'SUSPICIOUS',  'suspicious')}
       {cell('Quarantined',  quarantined, 'red',    'QUARANTINED', 'quarantined')}
       {cell('Offline',      offline,     'orange', 'OFFLINE',     'offline')}
+      {avgTrust != null && (
+        <div
+          className="stat-cell"
+          title="Average Trust Score across all monitored nodes (Trust = 1 - anomaly_score)"
+          style={{ cursor: 'default' }}
+        >
+          <div className="stat-label">Avg Trust</div>
+          <div
+            className="stat-value"
+            style={{
+              color: avgTrust >= 0.75 ? 'var(--green)' : avgTrust >= 0.5 ? 'var(--yellow)' : 'var(--red)'
+            }}
+          >
+            {(avgTrust * 100).toFixed(0)}%
+          </div>
+          <span className="stat-trend neutral">—</span>
+        </div>
+      )}
     </div>
   )
 }

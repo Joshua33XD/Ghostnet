@@ -7,6 +7,37 @@ export function getScoreClass(score) {
   return 'low'
 }
 
+/**
+ * Trust Score = 1 − anomaly_score  (frontend-only, backend field is unchanged)
+ * 0.0 = no trust (fully malicious), 1.0 = fully trusted (clean)
+ */
+export function getTrustScore(anomalyScore) {
+  return Math.max(0, Math.min(1, 1 - (anomalyScore ?? 0)))
+}
+
+/**
+ * CSS class for a Trust Score level (reuses same colour tokens as getScoreClass
+ * but inverted: high trust = 'low' concern = green, low trust = 'critical' = red)
+ */
+export function getTrustClass(anomalyScore) {
+  const trust = getTrustScore(anomalyScore)
+  if (trust < 0.25) return 'critical'
+  if (trust < 0.5)  return 'high'
+  if (trust < 0.75) return 'medium'
+  return 'low'   // "low" concern = good
+}
+
+/**
+ * Human-readable trust colour (hex) directly usable in inline styles.
+ */
+export function getTrustColor(anomalyScore) {
+  const trust = getTrustScore(anomalyScore)
+  if (trust < 0.25) return '#ff3d6e'
+  if (trust < 0.5)  return '#ff8c42'
+  if (trust < 0.75) return '#ffd166'
+  return '#00ff9d'
+}
+
 export function getStatusIcon(status) {
   switch (status) {
     case 'HEALTHY':     return '●'

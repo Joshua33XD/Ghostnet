@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Server, Cpu, ShieldCheck, ShieldAlert, Database, Zap, ArrowRight, Activity, Terminal, CornerDownRight } from 'lucide-react'
+import { getTrustScore, getTrustColor } from '../utils.js'
 
 export default function PipelineGraph({ nodes = {}, osiSummary = {}, onSelectNode }) {
   const nodeList = Object.values(nodes)
@@ -201,7 +202,7 @@ export default function PipelineGraph({ nodes = {}, osiSummary = {}, onSelectNod
                 <th>HEX ADDR</th>
                 <th>NODE IDENTIFIER</th>
                 <th>STATUS</th>
-                <th>EWMA SCORE</th>
+                <th>TRUST SCORE</th>
                 <th>MSG RATE</th>
                 <th>PAYLOAD</th>
                 <th>OSI LAYER</th>
@@ -259,11 +260,10 @@ export default function PipelineGraph({ nodes = {}, osiSummary = {}, onSelectNod
                       </td>
                       <td className="font-mono">
                         <span
-                          className={
-                            isCritical ? 'text-rose-400 font-bold' : isSuspicious ? 'text-amber-400' : 'text-emerald-400'
-                          }
+                          style={{ color: getTrustColor(score) }}
+                          title={`Trust Score = ${(getTrustScore(score) * 100).toFixed(0)}% (raw anomaly ${score.toFixed(4)})`}
                         >
-                          {score.toFixed(4)}
+                          {(getTrustScore(score) * 100).toFixed(0)}%
                         </span>
                       </td>
                       <td className="font-mono text-white/70">{(node.ewma_rate || 0).toFixed(2)} msg/s</td>

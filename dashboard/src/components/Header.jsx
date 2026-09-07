@@ -50,7 +50,7 @@ export default function Header({ wsStatus, currentView, onViewChange, eventCount
             <span className="brand-title">GHOSTNET</span>
             <span className="brand-v3-tag">v3.4 PIPELINE</span>
           </div>
-          <span className="brand-subtitle">CYBER INTELLIGENCE DEFENSE</span>
+          <span className="brand-subtitle">SELF-HEALING CYBER-IMMUNE NETWORK</span>
         </div>
       </div>
 

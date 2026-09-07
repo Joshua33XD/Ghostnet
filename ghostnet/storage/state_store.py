@@ -101,6 +101,9 @@ class NodeState:
     fusion_confidence:  float = 0.0
     memory_matches:     List[dict] = field(default_factory=list)  # [{incident_id, similarity, ...}]
 
+    # ── RECONFIGURE: alternate communication path set on quarantine ────────────
+    reroute_path: Optional[str] = None
+
     # Ring-buffer size
     _RING_SIZE: int = field(default=60, init=False, repr=False)
 
@@ -140,6 +143,8 @@ class NodeState:
             "fusion_score":       round(self.fusion_score, 4),
             "fusion_confidence":  round(self.fusion_confidence, 3),
             "memory_matches":     self.memory_matches,
+            # ── RECONFIGURE — alternate path (None when not quarantined) ——————
+            "reroute_path":       self.reroute_path,
         }
 
     # ── Ring-buffer helpers ────────────────────────────────────────────────────
@@ -342,7 +347,14 @@ class StateStore:
             node.status = NodeStatus.HEALTHY
             node.recovery_time = time.time()
             node.quarantine_clean_streak = 0
+            node.reroute_path = None   # RECONFIGURE stage complete, path cleared
             logger.recovery(node_id)
+
+    def set_reroute_path(self, node_id: str, path: Optional[str]) -> None:
+        """Set or clear the alternate communication path assigned during RECONFIGURE stage."""
+        with self._lock:
+            node = self.get_or_create(node_id)
+            node.reroute_path = path
 
     def mark_offline(self, node_id: str, elapsed: float) -> None:
         with self._lock:

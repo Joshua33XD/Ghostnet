@@ -81,6 +81,8 @@ class QuarantineManager:
         # v3: track last protect command and det_results per node for incident recording
         self._last_response: dict = {}   # { node_id -> str }
         self._last_det_results: dict = {}  # { node_id -> List[ThreatResult] }
+        # RECONFIGURE: round-robin index into config.RECONFIGURE_BACKUP_PATHS
+        self._reroute_counter: int = 0
 
     # -- Lifecycle --------------------------------------------------------------
     def start(self) -> None:
@@ -142,6 +144,7 @@ class QuarantineManager:
                     score = node.anomaly_score
                     logger.attack_detected(node_id, score)
                     self._store.mark_quarantined(node_id)
+                    self._assign_reroute_path(node_id)
 
         # -- STEP 2: Self-heal threats that have cleared -----------------------
         cleared = sent_protect - active_threats
@@ -208,6 +211,31 @@ class QuarantineManager:
                 self._store.mark_quarantined(node_id)
                 self._send_command(node_id, RESPONSE_QUARANTINE)
                 self._last_response[node_id] = RESPONSE_QUARANTINE
+                self._assign_reroute_path(node_id)
+
+    # -- RECONFIGURE: assign alternate communication path ----------------------
+    def _assign_reroute_path(self, node_id: str) -> None:
+        """
+        Pick the next backup gateway from the pool (round-robin) and record it
+        on the node state. Publishes a reconfigure MQTT command so the real
+        network fabric (or simulator) can observe the instruction.
+        """
+        paths = config.RECONFIGURE_BACKUP_PATHS
+        if not paths:
+            return  # RECONFIGURE stage disabled in config
+        chosen = paths[self._reroute_counter % len(paths)]
+        self._reroute_counter += 1
+        self._store.set_reroute_path(node_id, chosen)
+        reroute_topic = f"{config.MQTT_TOPIC_ROOT}/{node_id}/reconfigure"
+        if self._publish:
+            try:
+                self._publish(reroute_topic, chosen)
+            except Exception as exc:
+                logger.error(f"[RECONFIGURE] Failed to publish reroute command: {exc}", node_id=node_id)
+        logger.info(
+            f"[RECONFIGURE] {node_id} traffic rerouted via {chosen}",
+            node_id=node_id,
+        )
 
     # -- v3: Health verification -----------------------------------------------
     def _verify_health(self, node_id: str) -> bool:
