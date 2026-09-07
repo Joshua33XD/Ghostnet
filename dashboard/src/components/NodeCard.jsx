@@ -15,14 +15,14 @@ export function NodeCardSkeleton() {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="skeleton-block" style={{ height: 13, width: '55%', borderRadius: 4 }} />
-          <div className="skeleton-block" style={{ height: 9,  width: '40%', borderRadius: 3 }} />
+          <div className="skeleton-block" style={{ height: 9, width: '40%', borderRadius: 3 }} />
         </div>
         <div className="skeleton-block" style={{ width: 72, height: 72, borderRadius: '50%' }} />
       </div>
       <div className="skeleton-block" style={{ height: 7, borderRadius: 20, marginBottom: 14 }} />
       <div className="skeleton-block" style={{ height: 50, borderRadius: 6, marginBottom: 10 }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
-        {[1,2,3,4].map(i => (
+        {[1, 2, 3, 4].map(i => (
           <div key={i} className="skeleton-block" style={{ height: 40, borderRadius: 6 }} />
         ))}
       </div>
@@ -32,12 +32,12 @@ export function NodeCardSkeleton() {
 
 /* ── Radial anomaly gauge ───────────────────────────────────── */
 function RadialGauge({ score }) {
-  const pct   = Math.min(score, 1)
-  const r     = 28
-  const circ  = 2 * Math.PI * r
-  const dash  = circ * pct
+  const pct = Math.min(score, 1)
+  const r = 28
+  const circ = 2 * Math.PI * r
+  const dash = circ * pct
   const color = pct >= 0.75 ? '#ff3d6e' : pct >= 0.5 ? '#ff8c42' : pct >= 0.25 ? '#ffd166' : '#00ff9d'
-  const glow  = pct >= 0.75 ? 'rgba(255,61,110,0.6)' : pct >= 0.5 ? 'rgba(255,140,66,0.5)' : 'rgba(0,255,157,0.4)'
+  const glow = pct >= 0.75 ? 'rgba(255,61,110,0.6)' : pct >= 0.5 ? 'rgba(255,140,66,0.5)' : 'rgba(0,255,157,0.4)'
 
   return (
     <svg width={72} height={72} viewBox="0 0 72 72">
@@ -75,13 +75,13 @@ function Sparkline({ history, status }) {
     return <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 10 }}>no data</div>
   }
   const color = status === 'QUARANTINED' ? '#ff3d6e' : status === 'SUSPICIOUS' ? '#ffd166' : '#00c8ff'
-  const data  = history.map((h, i) => ({ i, v: h.score }))
+  const data = history.map((h, i) => ({ i, v: h.score }))
   return (
     <ResponsiveContainer width="100%" height={44}>
       <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
         <defs>
           <linearGradient id={`sg-${status}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor={color} stopOpacity={0.4} />
+            <stop offset="0%" stopColor={color} stopOpacity={0.4} />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -106,11 +106,11 @@ function Sparkline({ history, status }) {
 /* ── NodeCard ───────────────────────────────────────────────── */
 export default function NodeCard({ node, onRelease, onSelect, history }) {
   const scoreClass = getScoreClass(node.anomaly_score)
-  const threats    = node.active_threats ?? []
+  const threats = node.active_threats ?? []
 
   // Two-step release confirmation state
   const [confirmRelease, setConfirmRelease] = useState(false)
-  const [countdown, setCountdown]           = useState(5)
+  const [countdown, setCountdown] = useState(5)
   const countdownRef = useRef(null)
 
   const cancelConfirm = useCallback((e) => {
@@ -228,6 +228,38 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
               ⚡ {(node.fusion_score * 100).toFixed(0)}%
             </span>
           )}
+        </div>
+      )}
+
+      {/* Active Protections — what response is live per-threat, and heal progress */}
+      {node.active_protections && Object.keys(node.active_protections).length > 0 && (
+        <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+            Active Protections
+          </div>
+          {Object.entries(node.active_protections).map(([threatName, p]) => {
+            const pct = Math.min(100, (p.heal_streak / p.recovery_window) * 100)
+            return (
+              <div key={threatName} style={{
+                background: 'rgba(255,61,110,0.06)', border: '1px solid rgba(255,61,110,0.25)',
+                borderRadius: 6, padding: '6px 8px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 4 }}>
+                  <span style={{ color: '#ff8ba3', fontWeight: 700 }}>🔒 {p.action}</span>
+                  <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    heal {p.heal_streak}/{p.recovery_window}
+                  </span>
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4 }}>{p.reason}</div>
+                <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', width: `${pct}%`, background: '#00ff9d',
+                    transition: 'width 0.5s ease', borderRadius: 2,
+                  }} />
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 

@@ -13,5 +13,8 @@ dependencies = [
     "numpy>=1.26.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["ghostnet*"]
+
 [tool.vercel]
 entrypoint = "ghostnet/api/main.py"

@@ -63,8 +63,9 @@ def main() -> None:
     mqtt_client = MQTTClient(store)
     try:
         mqtt_client.connect()
-    except Exception as e:
-        logger.error(f"MQTT unavailable, continuing without it: {e}")
+    except Exception as exc:
+        logger.error(f"MQTT broker unavailable ({exc}) — continuing without MQTT. "
+                     f"HTTP and WebSocket ingestion are unaffected.")
 
     logger.info("Registering HTTP ingest adapter …")
     http_adapter = HTTPAdapter(store, app)

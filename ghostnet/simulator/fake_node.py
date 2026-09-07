@@ -20,6 +20,14 @@ import sys
 import threading
 import time
 
+# Force UTF-8 output on Windows so Rich doesn't crash on emoji/box-drawing chars
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import paho.mqtt.client as mqtt
 from rich.console import Console
 from rich.text import Text
