@@ -1,399 +1,259 @@
-// NodeCard — full visual upgrade with sparkline + radial score gauge + v3 OSI/ML badges
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { getScoreClass, getStatusIcon, formatElapsed, formatRate, formatBytes, getTrustScore, getTrustColor } from '../utils.js'
+// NodeCard — trust-first hierarchy redesign
+// Level 1: Node ID + Status pill
+// Level 2: Trust Score (large, semantic color)
+// Level 3: Reason (why suspicious/quarantined)
+// Level 4: [Details] collapsible — OSI, ML, hashes, CPU, RAM etc.
+import { useState } from 'react'
+import { getTrustScore, getTrustColor, getScoreClass, formatElapsed, formatRate, formatBytes } from '../utils.js'
 import ThreatBadge from './ThreatBadge.jsx'
 import OSIBadge from './OSIBadge.jsx'
 import MLScore from './MLScore.jsx'
 import LifecycleStepper from './LifecycleStepper.jsx'
-import {
-  AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip
-} from 'recharts'
+import { AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
-/* ── Skeleton placeholder ──────────────────────────────────── */
+/* ── Skeleton ─────────────────────────────────────────────── */
 export function NodeCardSkeleton() {
   return (
     <div className="skeleton-card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div className="skeleton-block" style={{ height: 13, width: '55%', borderRadius: 4 }} />
-          <div className="skeleton-block" style={{ height: 9, width: '40%', borderRadius: 3 }} />
-        </div>
-        <div className="skeleton-block" style={{ width: 72, height: 72, borderRadius: '50%' }} />
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
+        <div className="skeleton-block" style={{ height:13, width:'55%', borderRadius:4 }} />
+        <div className="skeleton-block" style={{ height:20, width:'25%', borderRadius:4 }} />
       </div>
-      <div className="skeleton-block" style={{ height: 7, borderRadius: 20, marginBottom: 14 }} />
-      <div className="skeleton-block" style={{ height: 50, borderRadius: 6, marginBottom: 10 }} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className="skeleton-block" style={{ height: 40, borderRadius: 6 }} />
-        ))}
-      </div>
+      <div className="skeleton-block" style={{ height:36, width:'40%', borderRadius:6, marginBottom:12 }} />
+      <div className="skeleton-block" style={{ height:9, width:'70%', borderRadius:3, marginBottom:8 }} />
+      <div className="skeleton-block" style={{ height:9, width:'50%', borderRadius:3 }} />
     </div>
   )
 }
 
-/* ── Radial TRUST gauge (Trust = 1 – anomaly_score) ────────── */
-function RadialGauge({ anomalyScore }) {
-  const trust = getTrustScore(anomalyScore)
-  // The gauge arc fills clockwise with the trust percentage (high trust = almost full ring)
-  const r = 28
-  const circ = 2 * Math.PI * r
-  const dash = circ * trust
-  const color = getTrustColor(anomalyScore)
-  const glow = trust >= 0.75 ? 'rgba(0,255,157,0.5)' : trust >= 0.5 ? 'rgba(255,209,102,0.4)' : trust >= 0.25 ? 'rgba(255,140,66,0.5)' : 'rgba(255,61,110,0.6)'
-
-  return (
-    <svg width={72} height={72} viewBox="0 0 72 72">
-      <defs>
-        <filter id={`glow-t-${Math.round(trust * 100)}`}>
-          <feGaussianBlur stdDeviation="2.5" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-      {/* Track */}
-      <circle cx={36} cy={36} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
-      {/* Fill — high trust = nearly complete ring (green) */}
-      <circle
-        cx={36} cy={36} r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth={5}
-        strokeDasharray={`${dash} ${circ}`}
-        strokeLinecap="round"
-        transform="rotate(-90 36 36)"
-        style={{ filter: `drop-shadow(0 0 4px ${glow})`, transition: 'stroke-dasharray 0.6s ease' }}
-      />
-      {/* Trust % label */}
-      <text x={36} y={33} textAnchor="middle" fontSize={10} fontWeight={700}
-        fontFamily="JetBrains Mono, monospace" fill={color}>
-        {(trust * 100).toFixed(0)}%
-      </text>
-      <text x={36} y={44} textAnchor="middle" fontSize={7}
-        fontFamily="JetBrains Mono, monospace" fill="rgba(255,255,255,0.35)">
-        TRUST
-      </text>
-    </svg>
-  )
+/* ── Status symbol for accessibility (not color-only) ─────── */
+function statusSymbol(status) {
+  if (status === 'HEALTHY')    return '●'
+  if (status === 'SUSPICIOUS') return '▲'
+  if (status === 'QUARANTINED') return '■'
+  return '○'
 }
 
-/* ── Score sparkline ────────────────────────────────────────── */
-function Sparkline({ history, status }) {
-  if (!history || history.length < 2) {
-    return <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 10 }}>no data</div>
+/* ── Primary reason text from threats ──────────────────────── */
+function getPrimaryReason(node) {
+  if (!node) return null
+  // prefer active_threats array if available
+  const threats = node.active_threats ?? node.threat_details ?? []
+  if (threats.length > 0) {
+    const top = threats[0]
+    if (typeof top === 'string') return top
+    if (top.reason) return top.reason
+    if (top.threat_type) return top.threat_type.replace(/_/g, ' ').toLowerCase()
+    if (top.type) return top.type.replace(/_/g, ' ').toLowerCase()
   }
-  const color = status === 'QUARANTINED' ? '#ff3d6e' : status === 'SUSPICIOUS' ? '#ffd166' : '#00c8ff'
-  const data = history.map((h, i) => ({ i, v: h.score }))
+  // fallback: derive from status
+  if (node.status === 'QUARANTINED') return 'Threat threshold exceeded — node isolated'
+  if (node.status === 'SUSPICIOUS') {
+    if (node.anomaly_score > 0.6) return 'ML anomaly score elevated'
+    if ((node.msg_rate ?? 0) > 5) return 'Unusual outbound message rate'
+    return 'Anomalous behaviour detected'
+  }
+  return null
+}
+
+/* ── Mini sparkline ─────────────────────────────────────────── */
+function Sparkline({ history, color }) {
+  if (!history || history.length < 2) return null
+  const data = history.map(h => ({ v: Math.round((1 - (h.score ?? 0)) * 100) }))
   return (
-    <ResponsiveContainer width="100%" height={44}>
-      <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+    <ResponsiveContainer width="100%" height={32}>
+      <AreaChart data={data} margin={{ top:2, right:0, left:0, bottom:0 }}>
         <defs>
-          <linearGradient id={`sg-${status}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+          <linearGradient id={`sg-${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.3} />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
         <Area
           type="monotone" dataKey="v"
           stroke={color} strokeWidth={1.5}
-          fill={`url(#sg-${status})`}
-          dot={false} isAnimationActive={false}
+          fill={`url(#sg-${color.replace('#','')})`}
+          isAnimationActive={false}
         />
         <RTooltip
-          content={({ active, payload }) =>
-            active && payload?.[0]
-              ? <div style={{ background: '#0d1526', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 4, padding: '2px 6px', fontSize: 10, color: '#e8f0ff', fontFamily: 'monospace' }}>{payload[0].value.toFixed(4)}</div>
-              : null
-          }
+          contentStyle={{ background:'var(--surface-overlay)', border:'1px solid var(--border)', borderRadius:6, fontSize:11 }}
+          labelStyle={{ display:'none' }}
+          formatter={v => [`Trust ${v}%`]}
         />
       </AreaChart>
     </ResponsiveContainer>
   )
 }
 
-/* ── NodeCard ───────────────────────────────────────────────── */
+/* ── Main NodeCard ──────────────────────────────────────────── */
 export default function NodeCard({ node, onRelease, onSelect, history }) {
-  const scoreClass = getScoreClass(node.anomaly_score)
-  const trust = getTrustScore(node.anomaly_score)
-  const trustColor = getTrustColor(node.anomaly_score)
-  const threats = node.active_threats ?? []
+  const [expanded, setExpanded] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
-  // Two-step release confirmation state
-  const [confirmRelease, setConfirmRelease] = useState(false)
-  const [countdown, setCountdown] = useState(5)
-  const countdownRef = useRef(null)
+  if (!node) return null
 
-  const cancelConfirm = useCallback((e) => {
-    e?.stopPropagation()
-    clearInterval(countdownRef.current)
-    setConfirmRelease(false)
-    setCountdown(5)
-  }, [])
+  const trustPct   = Math.round(getTrustScore(node.anomaly_score ?? 0) * 100)
+  const trustColor = getTrustColor(node.anomaly_score ?? 0)
+  const reason     = getPrimaryReason(node)
+  const uptime     = formatElapsed(node.first_seen)
+  const isActionable = node.status === 'QUARANTINED' || node.status === 'SUSPICIOUS'
 
-  const handleReleaseClick = (e) => {
-    e.stopPropagation()
-    setConfirmRelease(true)
-    setCountdown(5)
-    countdownRef.current = setInterval(() => {
-      setCountdown(c => {
-        if (c <= 1) {
-          clearInterval(countdownRef.current)
-          setConfirmRelease(false)
-          return 5
-        }
-        return c - 1
-      })
-    }, 1000)
-  }
-
-  const handleConfirmRelease = (e) => {
-    e.stopPropagation()
-    clearInterval(countdownRef.current)
-    setConfirmRelease(false)
-    setCountdown(5)
-    onRelease(node.node_id)
-  }
-
-  // Cleanup countdown on unmount or status change away from QUARANTINED
-  useEffect(() => {
-    if (node.status !== 'QUARANTINED' && confirmRelease) cancelConfirm()
-  }, [node.status]) // eslint-disable-line
-  useEffect(() => () => clearInterval(countdownRef.current), [])
+  // Build "details" items — all the technical depth
+  const detailStats = [
+    { label:'Anomaly',  value:(node.anomaly_score ?? 0).toFixed(4) },
+    { label:'ML Score', value:(node.ml_score ?? 0).toFixed(3) },
+    { label:'Fusion',   value:(node.fusion_score ?? node.anomaly_score ?? 0).toFixed(3) },
+    { label:'Msg Rate', value:formatRate(node.ewma_rate ?? node.msg_rate) },
+    { label:'Uptime',   value:uptime },
+    { label:'Payload',  value:formatBytes(node.avg_payload ?? 0) },
+  ]
+  if (node.cpu_pct   != null) detailStats.push({ label:'CPU',     value:`${node.cpu_pct?.toFixed(0)}%` })
+  if (node.ram_pct   != null) detailStats.push({ label:'RAM',     value:`${node.ram_pct?.toFixed(0)}%` })
+  if (node.storage_pct != null) detailStats.push({ label:'Disk',  value:`${node.storage_pct?.toFixed(0)}%` })
 
   return (
     <div
-      id={`node-${node.node_id}`}
       className={`node-card ${node.status}`}
       onClick={() => onSelect?.(node)}
-      style={{ cursor: 'pointer' }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => e.key === 'Enter' && onSelect?.(node)}
+      aria-label={`Node ${node.node_id} — ${node.status} — Trust ${trustPct}%`}
     >
-      {/* Animated background glow for quarantined */}
-      {node.status === 'QUARANTINED' && <div className="card-threat-overlay" />}
-
-      {/* Header row */}
+      {/* ── LEVEL 1: Identity + Status ─────────────────────── */}
       <div className="node-card-header">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span className="node-id">
-            {getStatusIcon(node.status)}&nbsp;{node.node_id}
-          </span>
-          <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            {node.message_count?.toLocaleString() ?? 0} msgs · last {formatElapsed(node.last_seen)}
-          </span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-          <span className={`node-status-pill ${node.status}`}>{node.status}</span>
-          <RadialGauge anomalyScore={node.anomaly_score ?? 0} />
-        </div>
-      </div>
-
-      {/* Active threat badges */}
-      {threats.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
-          {threats.map(t => <ThreatBadge key={t} threatName={t} />)}
-        </div>
-      )}
-
-      {/* Score sparkline */}
-      <div className="sparkline-wrap">
-        <div className="sparkline-label">
-          <span>EWMA Score History</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: trustColor }}>
-            Trust {(trust * 100).toFixed(0)}%
-          </span>
-        </div>
-        <Sparkline history={history} status={node.status} />
-        <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2, letterSpacing: '0.04em' }}
-          title="Trust = 100% − weighted(rule detectors 70%, ML anomaly 30%)">
-          raw anomaly {(node.anomaly_score ?? 0).toFixed(4)} · Trust = 1 − score
-        </div>
-      </div>
-
-      {/* v3: OSI + ML badges row */}
-      {(node.osi_layer || !node.ml_warmup) && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-          {node.osi_layer && (
-            <OSIBadge
-              layer={node.osi_layer}
-              layerName={node.osi_layer_name}
-              category={node.attack_category}
-              confidence={node.osi_confidence ?? 0}
-              evidence={node.osi_evidence ?? []}
-              mini
-            />
-          )}
-          <MLScore
-            mlScore={node.ml_score ?? 0}
-            mlAnomaly={node.ml_anomaly ?? false}
-            mlConfidence={node.ml_confidence ?? 0}
-            mlWarmup={node.ml_warmup ?? true}
-            mlSampleCount={node.ml_sample_count ?? 0}
-            mini
-          />
-          {node.fusion_score > 0 && (
-            <span
-              title={`Fusion score: ${(node.fusion_score * 100).toFixed(0)}% (det + ML combined)`}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 3,
-                padding: '2px 7px', borderRadius: 10, fontSize: 10, fontWeight: 700,
-                background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.4)',
-                color: '#a78bfa', cursor: 'help',
-              }}
-            >
-              ⚡ {(node.fusion_score * 100).toFixed(0)}%
+        <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+          <span className="node-id">{node.node_id}</span>
+          {node.ip_address && (
+            <span style={{ fontSize:'var(--text-xs)', color:'var(--text-muted)', fontFamily:'var(--font-mono)' }}>
+              {node.ip_address}
             </span>
           )}
         </div>
-      )}
-
-      {/* Active Protections — what response is live per-threat, and heal progress */}
-      {node.active_protections && Object.keys(node.active_protections).length > 0 && (
-        <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-            Active Protections
-          </div>
-          {Object.entries(node.active_protections).map(([threatName, p]) => {
-            const pct = Math.min(100, (p.heal_streak / p.recovery_window) * 100)
-            return (
-              <div key={threatName} style={{
-                background: 'rgba(255,61,110,0.06)', border: '1px solid rgba(255,61,110,0.25)',
-                borderRadius: 6, padding: '6px 8px',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 4 }}>
-                  <span style={{ color: '#ff8ba3', fontWeight: 700 }}>🔒 {p.action}</span>
-                  <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    heal {p.heal_streak}/{p.recovery_window}
-                  </span>
-                </div>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4 }}>{p.reason}</div>
-                <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%', width: `${pct}%`, background: '#00ff9d',
-                    transition: 'width 0.5s ease', borderRadius: 2,
-                  }} />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Stats grid */}
-      <div className="node-stats">
-        <div className="node-stat">
-          <div className="node-stat-label">Msg Rate</div>
-          <div className="node-stat-value">{formatRate(node.ewma_rate)}</div>
-        </div>
-        <div className="node-stat">
-          <div className="node-stat-label">Avg Payload</div>
-          <div className="node-stat-value">{formatBytes(node.ewma_payload)}</div>
-        </div>
-        <div className="node-stat">
-          <div className="node-stat-label">Total Msgs</div>
-          <div className="node-stat-value">{(node.message_count ?? 0).toLocaleString()}</div>
-        </div>
-        <div className="node-stat">
-          <div className="node-stat-label">Heartbeat</div>
-          <div className="node-stat-value">{formatElapsed(node.last_heartbeat)}</div>
-        </div>
-
-        {node.last_cpu_pct != null && (
-          <div className="node-stat">
-            <div className="node-stat-label">CPU</div>
-            <div className="node-stat-value" style={{ color: node.last_cpu_pct > 80 ? 'var(--red)' : node.last_cpu_pct > 60 ? 'var(--yellow)' : 'inherit' }}>
-              {node.last_cpu_pct.toFixed(0)}%
-            </div>
-          </div>
-        )}
-        {node.last_ram_pct != null && (
-          <div className="node-stat">
-            <div className="node-stat-label">RAM</div>
-            <div className="node-stat-value" style={{ color: node.last_ram_pct > 85 ? 'var(--red)' : 'inherit' }}>
-              {node.last_ram_pct.toFixed(0)}%
-            </div>
-          </div>
-        )}
-        {node.last_storage_pct != null && (
-          <div className="node-stat">
-            <div className="node-stat-label">Storage</div>
-            <div className="node-stat-value" style={{ color: node.last_storage_pct > 90 ? 'var(--red)' : 'inherit' }}>
-              {node.last_storage_pct.toFixed(0)}%
-            </div>
-          </div>
-        )}
-
-        {node.last_firmware_hash && (
-          <div className="node-stat" style={{ gridColumn: 'span 3' }}>
-            <div className="node-stat-label">Firmware Integrity</div>
-            <div className="node-stat-value" style={{ fontSize: 9, color: threats.includes('firmware_tamper') ? 'var(--red)' : 'var(--green)' }}>
-              {threats.includes('firmware_tamper') ? '⚠ TAMPERED' : '✓ VERIFIED'}&nbsp;·&nbsp;{node.last_firmware_hash.slice(0, 16)}…
-            </div>
-          </div>
-        )}
-        {node.last_config_hash && (
-          <div className="node-stat" style={{ gridColumn: 'span 3' }}>
-            <div className="node-stat-label">Config Integrity</div>
-            <div className="node-stat-value" style={{ fontSize: 9, color: threats.includes('config_tamper') ? 'var(--red)' : 'var(--green)' }}>
-              {threats.includes('config_tamper') ? '⚠ TAMPERED' : '✓ VERIFIED'}&nbsp;·&nbsp;{node.last_config_hash.slice(0, 16)}…
-            </div>
-          </div>
-        )}
+        <span className={`node-status-pill ${node.status}`}>
+          {statusSymbol(node.status)} {node.status}
+        </span>
       </div>
 
-      {/* Lifecycle stepper (compact) */}
-      <div style={{ marginTop: 10, marginBottom: 4 }}>
-        <LifecycleStepper status={node.status} reroutePath={node.reroute_path} compact />
+      {/* ── LEVEL 2: Trust Score (hero metric) ─────────────── */}
+      <div style={{ display:'flex', alignItems:'flex-end', gap:8, marginBottom:8 }}>
+        <span className="node-trust-score" style={{ color: trustColor }}>
+          {trustPct}
+        </span>
+        <div style={{ paddingBottom:4 }}>
+          <div className="node-trust-label">/ 100  TRUST</div>
+        </div>
+        {/* Compact sparkline */}
+        <div style={{ flex:1, minWidth:0 }}>
+          <Sparkline history={history} color={trustColor} />
+        </div>
       </div>
 
-      {/* Quarantine metadata */}
-      {node.status === 'QUARANTINED' && node.quarantine_time && (
-        <div className="quarantine-tag">
-          🔒 Quarantined {formatElapsed(node.quarantine_time)} ago
-        </div>
+      {/* ── LEVEL 3: Reason (only for non-healthy) ─────────── */}
+      {reason && node.status !== 'HEALTHY' && (
+        <div className="node-reason">{reason}</div>
       )}
-      {/* Reroute badge */}
-      {node.status === 'QUARANTINED' && node.reroute_path && (
+
+      {/* ── Lifecycle Stepper (compact) ─────────────────────── */}
+      <LifecycleStepper status={node.status} reroutePath={node.reroute_path} compact />
+
+      {/* ── Reroute badge ────────────────────────────────────── */}
+      {node.reroute_path && (
         <div style={{
-          marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5,
-          padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 700,
-          background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.45)',
-          color: '#c4b5fd', fontFamily: 'var(--font-mono)',
+          marginTop:6, display:'flex', alignItems:'center', gap:5,
+          padding:'3px 8px', borderRadius:6, fontSize:'var(--text-xs)',
+          background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)',
+          color:'#c4b5fd', fontFamily:'var(--font-mono)', fontWeight:700,
         }}>
-          ⇄ Rerouted via {node.reroute_path}
-        </div>
-      )}
-      {node.recovery_time && node.status === 'HEALTHY' && (
-        <div className="recovery-tag">
-          ✓ Recovered {formatElapsed(node.recovery_time)} ago
+          ⇄ {node.reroute_path}
         </div>
       )}
 
-      {/* ── Two-step Manual Release ─────────────────────── */}
-      {node.status === 'QUARANTINED' && onRelease && !confirmRelease && (
-        <button className="release-btn" onClick={handleReleaseClick}>
-          ⚡ Manual Release
-        </button>
-      )}
+      {/* ── LEVEL 4: Expandable details ──────────────────────── */}
+      <button
+        className="node-details-toggle"
+        onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
+        aria-expanded={expanded}
+      >
+        {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        {expanded ? 'Hide details' : 'Show technical details'}
+      </button>
 
-      {node.status === 'QUARANTINED' && confirmRelease && (
-        <div className="confirm-release-panel" onClick={e => e.stopPropagation()}>
-          <div className="confirm-release-msg">
-            ⚠ Release <strong>{node.node_id}</strong> from quarantine?
-            <br />This removes the current isolation. Auto-cancels in {countdown}s.
+      {expanded && (
+        <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:8 }}>
+          {/* Stats grid */}
+          <div className="node-stats">
+            {detailStats.map(s => (
+              <div className="node-stat" key={s.label}>
+                <span className="node-stat-label">{s.label}</span>
+                <span className="node-stat-value">{s.value}</span>
+              </div>
+            ))}
           </div>
-          <div className="confirm-release-btns">
-            <button className="confirm-yes-btn" onClick={handleConfirmRelease}>Yes, Release</button>
-            <button className="confirm-cancel-btn" onClick={cancelConfirm}>Cancel</button>
-          </div>
-          <div className="confirm-progress-bar">
-            <div className="confirm-progress-fill" style={{ width: `${(countdown / 5) * 100}%` }} />
+
+          {/* Integrity hashes */}
+          {(node.firmware_hash || node.config_hash) && (
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              {node.firmware_hash && (
+                <div style={{ fontSize:'var(--text-xs)', color:'var(--text-muted)', fontFamily:'var(--font-mono)' }}>
+                  FW {node.firmware_hash.slice(0,12)}…
+                  {node.firmware_changed && <span style={{ color:'var(--status-warn)', marginLeft:4 }}>CHANGED</span>}
+                </div>
+              )}
+              {node.config_hash && (
+                <div style={{ fontSize:'var(--text-xs)', color:'var(--text-muted)', fontFamily:'var(--font-mono)' }}>
+                  CFG {node.config_hash.slice(0,12)}…
+                  {node.config_changed && <span style={{ color:'var(--status-warn)', marginLeft:4 }}>CHANGED</span>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Active threats */}
+          {(node.active_threats ?? []).length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+              {(node.active_threats ?? []).slice(0,4).map((t,i) => (
+                <ThreatBadge key={i} threat={typeof t === 'string' ? { type:t } : t} />
+              ))}
+            </div>
+          )}
+
+          {/* OSI layer + ML score row */}
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+            {node.osi_layer && <OSIBadge layer={node.osi_layer} />}
+            {node.ml_score != null && <MLScore score={node.ml_score} />}
           </div>
         </div>
       )}
 
-      {/* Click hint */}
-      <div style={{ marginTop: 8, fontSize: 8, color: 'var(--text-muted)', letterSpacing: '0.06em', textAlign: 'right', opacity: 0.6 }}>
-        click to expand ↗
-      </div>
+      {/* ── Quarantine action ────────────────────────────────── */}
+      {node.status === 'QUARANTINED' && onRelease && (
+        <div onClick={e => e.stopPropagation()}>
+          {!confirming ? (
+            <button className="release-btn" onClick={() => setConfirming(true)}>
+              ⚡ Release from Quarantine
+            </button>
+          ) : (
+            <div className="confirm-release-panel">
+              <div className="confirm-release-msg">
+                Release <strong>{node.node_id}</strong> back to monitored network?
+              </div>
+              <div className="confirm-release-btns">
+                <button
+                  className="confirm-yes-btn"
+                  onClick={() => { onRelease(node.node_id); setConfirming(false) }}
+                >
+                  Confirm
+                </button>
+                <button className="confirm-cancel-btn" onClick={() => setConfirming(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
-
-

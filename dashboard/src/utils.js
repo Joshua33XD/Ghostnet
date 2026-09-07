@@ -28,14 +28,13 @@ export function getTrustClass(anomalyScore) {
 }
 
 /**
- * Human-readable trust colour (hex) directly usable in inline styles.
+ * Human-readable trust colour using design tokens (theme-aware).
  */
 export function getTrustColor(anomalyScore) {
-  const trust = getTrustScore(anomalyScore)
-  if (trust < 0.25) return '#ff3d6e'
-  if (trust < 0.5)  return '#ff8c42'
-  if (trust < 0.75) return '#ffd166'
-  return '#00ff9d'
+  const t = getTrustScore(anomalyScore)
+  if (t >= 0.75) return 'var(--status-healthy)'
+  if (t >= 0.40) return 'var(--status-warn)'
+  return 'var(--status-danger)'
 }
 
 export function getStatusIcon(status) {
@@ -91,11 +90,6 @@ export function formatElapsed(ts) {
   return `${Math.round(diff / 3600)}h ago`
 }
 
-export function formatRate(rate) {
-  if (!rate) return '0 /s'
-  return `${rate.toFixed(2)} /s`
-}
-
 export function formatBytes(bytes) {
   if (!bytes) return '0 B'
   if (bytes < 1024) return `${bytes.toFixed(0)} B`
@@ -131,4 +125,13 @@ export function formatExactTime(receivedMs, rawTs) {
   }
   if (!epochMs) return rawTs ?? '—'
   return new Date(epochMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+/**
+ * Format a rate number nicely (e.g. 1234 → "1.2 k/s")
+ */
+export function formatRate(n) {
+  if (n == null) return '—'
+  if (n >= 1000) return (n / 1000).toFixed(1) + ' k/s'
+  return n.toFixed(0) + '/s'
 }

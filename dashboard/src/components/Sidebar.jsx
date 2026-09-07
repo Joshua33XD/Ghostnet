@@ -1,75 +1,61 @@
-// Sidebar — node list with search filter and live status dots
-import { useState } from 'react'
-import { getStatusIcon } from '../utils.js'
+// Sidebar v5 — full labels + node health summary
+import { Shield, Map, Radio, AlertTriangle, Cpu, Server, FileText, Settings } from 'lucide-react'
 
-export default function Sidebar({ nodes, selectedNodeId, onSelectNode }) {
-  const [search, setSearch] = useState('')
-  const list = Object.values(nodes)
+const NAV = [
+  { id:'overview',   label:'Overview',       icon:Shield },
+  { id:'network',    label:'Network Map',    icon:Map },
+  { id:'comms',      label:'Communication',  icon:Radio },
+  { id:'threats',    label:'Threat Analysis',icon:AlertTriangle },
+  { id:'healing',    label:'Self-Healing',   icon:Cpu },
+  { id:'devices',    label:'Devices',        icon:Server },
+  { id:'events',     label:'Logs',           icon:FileText },
+  { id:'settings',   label:'Settings',       icon:Settings },
+]
 
-  // Severity sort: quarantined → suspicious → offline → healthy
-  const ORDER = { QUARANTINED: 0, SUSPICIOUS: 1, OFFLINE: 2, HEALTHY: 3 }
-  list.sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9))
-
-  const q        = search.trim().toLowerCase()
-  const filtered = q
-    ? list.filter(n =>
-        n.node_id.toLowerCase().includes(q) ||
-        n.status.toLowerCase().includes(q)
-      )
-    : list
+export default function Sidebar({ currentView, onViewChange, nodes, eventCount }) {
+  const nodeList = Object.values(nodes)
+  const quarantinedCount = nodeList.filter(n => n.status === 'QUARANTINED').length
 
   return (
-    <nav className="sidebar">
-      <div className="sidebar-section-label">Nodes ({list.length})</div>
-
-      {/* Search */}
-      <div className="sidebar-search">
-        <span className="sidebar-search-icon">⌕</span>
-        <input
-          id="sidebar-search"
-          className="sidebar-search-input"
-          type="text"
-          placeholder="Search by name or status…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          aria-label="Filter nodes"
-        />
+    <aside className="app-sidebar">
+      <div className="sidebar-logo sidebar-logo--nav">
+        <div className="sidebar-logo-icon">
+          <Shield size={16} />
+        </div>
+        <div className="sidebar-logo-text">
+          <span className="sidebar-logo-title">GhostNet</span>
+          <span className="sidebar-logo-sub">Secure · Monitor · Heal</span>
+        </div>
       </div>
 
-      {/* Empty — no nodes at all */}
-      {list.length === 0 && (
-        <div style={{ padding: '20px 8px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6 }}>
-          No nodes yet.<br />Start the simulator.
-        </div>
-      )}
+      <nav className="sidebar-nav">
+        {NAV.map(item => {
+          const Icon = item.icon
+          const badge = item.id === 'threats' && quarantinedCount > 0 ? quarantinedCount
+                      : item.id === 'events' && eventCount > 0 ? Math.min(eventCount, 99)
+                      : null
+          return (
+            <button
+              key={item.id}
+              className={`sidebar-item${currentView === item.id ? ' active' : ''}`}
+              onClick={() => onViewChange(item.id)}
+              aria-current={currentView === item.id ? 'page' : undefined}
+            >
+              <Icon size={15} style={{ flexShrink: 0 }} />
+              {item.label}
+              {badge && <span className="sidebar-item-badge">{badge}</span>}
+            </button>
+          )
+        })}
+      </nav>
 
-      {/* Empty — search returned nothing */}
-      {list.length > 0 && filtered.length === 0 && (
-        <div style={{ padding: '12px 8px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-          No nodes match "{search}"
+      {/* Footer */}
+      <div className="sidebar-footer">
+        <div className="sidebar-footer-text">
+          Secure · Monitor · Heal<br />
+          <span style={{ opacity:0.6 }}>GhostNet keeps your IoT network<br />safe and self-reliant.</span>
         </div>
-      )}
-
-      {filtered.map(node => (
-        <div
-          key={node.node_id}
-          className={`sidebar-node-item${selectedNodeId === node.node_id ? ' active' : ''}`}
-          onClick={() => onSelectNode?.(node)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={e => e.key === 'Enter' && onSelectNode?.(node)}
-          aria-label={`${node.node_id} — ${node.status}`}
-          aria-pressed={selectedNodeId === node.node_id}
-        >
-          <div
-            className={`sidebar-status-dot ${node.status}`}
-            aria-hidden="true"
-            title={node.status}
-          />
-          <span className="sidebar-node-name">{node.node_id}</span>
-          <span className="sidebar-node-score">{node.anomaly_score.toFixed(2)}</span>
-        </div>
-      ))}
-    </nav>
+      </div>
+    </aside>
   )
 }

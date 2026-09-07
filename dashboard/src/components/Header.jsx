@@ -1,100 +1,89 @@
-import React, { useState, useEffect } from 'react'
-import { Shield, Layers, Activity, Zap, Volume2, VolumeX, Terminal, Cpu } from 'lucide-react'
+// Header v5 — search bar + system status + theme toggle
+import { useState, useEffect } from 'react'
+import { Shield, Search, Bell, Sun, Moon, Palette, User } from 'lucide-react'
+import { THEME_LABELS } from '../utils/theme.js'
 
-export default function Header({ wsStatus, currentView, onViewChange, eventCount = 0, nodeCount = 0 }) {
-  const [time, setTime] = useState(() => new Date().toLocaleTimeString())
-  const [audioEnabled, setAudioEnabled] = useState(false)
+const THEME_ICONS = {
+  dark: Moon,
+  clean: Sun,
+  colorful: Palette,
+}
+
+export default function Header({ wsStatus, nodeCount, eventCount, theme, onThemeToggle }) {
+  const [clock, setClock] = useState('')
+  const [sub, setSub] = useState('')
 
   useEffect(() => {
-    const t = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000)
+    const tick = () => {
+      const now = new Date()
+      setClock(now.toLocaleTimeString('en-GB', { hour12: false }))
+      setSub(now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }))
+    }
+    tick()
+    const t = setInterval(tick, 1000)
     return () => clearInterval(t)
   }, [])
 
-  const toggleAudio = () => {
-    setAudioEnabled(prev => !prev)
-    if (!audioEnabled) {
-      try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-        const osc = audioCtx.createOscillator()
-        const gain = audioCtx.createGain()
-        osc.type = 'sine'
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime)
-        gain.gain.setValueAtTime(0.05, audioCtx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15)
-        osc.connect(gain)
-        gain.connect(audioCtx.destination)
-        osc.start()
-        osc.stop(audioCtx.currentTime + 0.15)
-      } catch (e) {
-        // audio context blocked
-      }
-    }
-  }
-
-  const views = [
-    { id: 'pipeline', label: '1. Pipeline Architecture', icon: Layers },
-    { id: 'narrator', label: '2. Transparent Telemetry', icon: Terminal },
-    { id: 'matrix', label: '3. Node Matrix Grid', icon: Activity },
-    { id: 'feature-radar', label: '4. Feature Vector Radar', icon: Cpu },
-  ]
+  const isConnected = wsStatus === 'connected'
+  const ThemeIcon = THEME_ICONS[theme] ?? Sun
+  const nextLabel = THEME_LABELS[theme] ?? theme
 
   return (
-    <header className="futuristic-header">
-      {/* Brand logo & identity */}
-      <div className="header-brand-glass">
-        <div className="brand-icon-shield">
-          <Shield className="w-4 h-4 text-cyan-400" />
+    <header className="app-header">
+      <div style={{ width: 'calc(var(--sidebar-w) - 20px)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="sidebar-logo-icon" style={{ width: 30, height: 30, borderRadius: 7 }}>
+          <Shield size={16} />
         </div>
-        <div className="brand-text-col">
-          <div className="flex items-center gap-1.5">
-            <span className="brand-title">GHOSTNET</span>
-            <span className="brand-v3-tag">v3.4 PIPELINE</span>
+        <div className="sidebar-logo-text">
+          <span className="sidebar-logo-title">GhostNet</span>
+          <span className="sidebar-logo-sub">IoT Security</span>
+        </div>
+      </div>
+
+      <div className="header-search">
+        <Search size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        <input placeholder="Search device, IP, or feature…" />
+        <kbd style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0, opacity: 0.7 }}>⌘ K</kbd>
+      </div>
+
+      <div className="header-right">
+        {isConnected ? (
+          <div className="system-status-pill">
+            <span className="status-dot" />
+            System Online
+            <span style={{ fontSize: 9, opacity: 0.7 }}>· {nodeCount ?? 0} Nodes</span>
           </div>
-          <span className="brand-subtitle">SELF-HEALING CYBER-IMMUNE NETWORK</span>
+        ) : (
+          <div className="system-status-pill" style={{ color: 'var(--status-warn)', borderColor: 'var(--status-warn-border)', background: 'var(--status-warn-bg)' }}>
+            <span className="status-dot" style={{ animationDelay: '0.5s' }} />
+            {wsStatus === 'connecting' ? 'Connecting…' : 'Offline'}
+          </div>
+        )}
+
+        <div>
+          <div className="header-clock">{clock}</div>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textAlign: 'right' }}>{sub}</div>
         </div>
-      </div>
 
-      {/* Center Floating View Switcher Pills */}
-      <div className="header-nav-pills">
-        {views.map(v => {
-          const Icon = v.icon
-          const isActive = currentView === v.id
-          return (
-            <button
-              key={v.id}
-              className={`nav-pill-btn ${isActive ? 'active' : ''}`}
-              onClick={() => onViewChange(v.id)}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{v.label}</span>
-            </button>
-          )
-        })}
-      </div>
+        <div style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />
 
-      {/* Right HUD status items */}
-      <div className="header-right-hud">
-        {/* Live Audio alert toggle */}
         <button
-          className={`hud-icon-btn ${audioEnabled ? 'active' : ''}`}
-          onClick={toggleAudio}
-          title={audioEnabled ? 'Audio alerts active' : 'Audio alerts muted'}
+          className={`theme-toggle-btn theme-toggle-btn--${theme}`}
+          onClick={onThemeToggle}
+          title={`Current: ${nextLabel}. Click to cycle themes.`}
         >
-          {audioEnabled ? <Volume2 className="w-3.5 h-3.5 text-cyan-400" /> : <VolumeX className="w-3.5 h-3.5 text-white/40" />}
+          <ThemeIcon size={13} />
+          {nextLabel}
         </button>
 
-        {/* Real-time Clock */}
-        <div className="hud-clock-pill">
-          <span className="hud-clock-time">{time}</span>
-        </div>
+        <button className="hud-icon-btn" title="Notifications">
+          <Bell size={14} />
+          {eventCount > 0 && (
+            <span className="notification-badge">{eventCount > 9 ? '9+' : eventCount}</span>
+          )}
+        </button>
 
-        {/* WebSocket Status Pill */}
-        <div className={`ws-status-pill ${wsStatus}`}>
-          <div className="ws-pulse-dot" />
-          <span className="font-mono text-[10px] tracking-wider uppercase font-bold">
-            {wsStatus === 'connected' ? 'LIVE LINK' : wsStatus === 'connecting' ? 'SYNCING' : 'OFFLINE'}
-          </span>
-        </div>
+        <div className="avatar-btn" title="Account">GN</div>
       </div>
     </header>
   )
