@@ -61,7 +61,10 @@ def main() -> None:
     # ── 1. Connection adapters ─────────────────────────────────────────────────
     logger.info("Starting MQTT adapter …")
     mqtt_client = MQTTClient(store)
-    mqtt_client.connect()
+    try:
+        mqtt_client.connect()
+    except Exception as e:
+        logger.error(f"MQTT unavailable, continuing without it: {e}")
 
     logger.info("Registering HTTP ingest adapter …")
     http_adapter = HTTPAdapter(store, app)

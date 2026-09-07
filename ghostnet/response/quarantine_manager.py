@@ -12,30 +12,43 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import dataclass
 from typing import Optional
 
 from ghostnet import config, logger
 from ghostnet.detection.detectors.base import (
     RESPONSE_QUARANTINE, RESPONSE_RELEASE,
-    RESPONSE_LOCKOUT, RESPONSE_UNLOCK,
     RESPONSE_RESTORE_FIRMWARE, RESPONSE_RESTORE_CONFIG,
-    RESPONSE_RESTART_SERVICE, RESPONSE_REJECT_MESSAGES,
+    RESPONSE_REJECT_MESSAGES,
     RESPONSE_RESUME_MESSAGES,
 )
 from ghostnet.storage.state_store import NodeStatus, StateStore
 
-# Map threat name -> (protect_response, heal_response, description)
+@dataclass(frozen=True)
+class HealingProfile:
+    group: str
+    protect_response: str
+    heal_response: str
+    description: str
+
+
+# Limited self-healing profiles. Keep this small enough to defend and demo.
 THREAT_RESPONSES = {
-    "dos_flood":           (RESPONSE_QUARANTINE,       RESPONSE_RELEASE,          "Network isolated to stop flood."),
-    "mqtt_abuse":          (RESPONSE_QUARANTINE,       RESPONSE_RELEASE,          "MQTT client isolated due to topic abuse."),
-    "replay_anomaly":      (RESPONSE_REJECT_MESSAGES,  RESPONSE_RESUME_MESSAGES,  "Messages being rejected (replay protection)."),
-    "data_exfiltration":   (RESPONSE_QUARANTINE,       RESPONSE_RELEASE,          "Network isolated to stop data leak."),
-    "resource_exhaustion": (RESPONSE_RESTART_SERVICE,  RESPONSE_RESUME_MESSAGES,  "Service restart triggered to recover resources."),
-    "crash_restart":       (RESPONSE_RESTART_SERVICE,  RESPONSE_RESUME_MESSAGES,  "Managed restart to break crash loop."),
-    "firmware_tamper":     (RESPONSE_RESTORE_FIRMWARE, RESPONSE_RESUME_MESSAGES,  "Firmware restore command sent."),
-    "config_tamper":       (RESPONSE_RESTORE_CONFIG,   RESPONSE_RESUME_MESSAGES,  "Config restore command sent."),
-    "brute_force":         (RESPONSE_LOCKOUT,          RESPONSE_UNLOCK,           "Account/session locked out."),
-    "network_anomaly":     (RESPONSE_QUARANTINE,       RESPONSE_RELEASE,          "Network isolated due to traffic anomaly."),
+    # 1. Containment: isolate nodes that can affect the wider IoT network.
+    "dos_flood":           HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Node quarantined to stop flood traffic."),
+    "data_exfiltration":   HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Node quarantined to stop data leakage."),
+    "network_anomaly":     HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Node quarantined due to abnormal network behavior."),
+    "resource_exhaustion": HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Node quarantined while resource usage normalises."),
+    "crash_restart":       HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Node quarantined until restart behavior stabilises."),
+
+    # 2. Traffic filtering: reject unsafe application/session traffic.
+    "mqtt_abuse":          HealingProfile("traffic_filter", RESPONSE_REJECT_MESSAGES, RESPONSE_RESUME_MESSAGES, "MQTT messages restricted due to topic abuse."),
+    "replay_anomaly":      HealingProfile("traffic_filter", RESPONSE_REJECT_MESSAGES, RESPONSE_RESUME_MESSAGES, "Duplicate or stale messages rejected."),
+    "brute_force":         HealingProfile("traffic_filter", RESPONSE_REJECT_MESSAGES, RESPONSE_RESUME_MESSAGES, "Authentication attempts restricted."),
+
+    # 3. Integrity restore: request known-good state, then verify clean cycles.
+    "firmware_tamper":     HealingProfile("integrity_restore", RESPONSE_RESTORE_FIRMWARE, RESPONSE_RESUME_MESSAGES, "Firmware restore/verification requested."),
+    "config_tamper":       HealingProfile("integrity_restore", RESPONSE_RESTORE_CONFIG, RESPONSE_RESUME_MESSAGES, "Config restore/verification requested."),
 }
 
 HUMAN_LABELS = {
@@ -108,11 +121,17 @@ class QuarantineManager:
         # -- STEP 1: Apply protection for newly triggered threats --------------
         for threat_name in active_threats:
             if threat_name not in sent_protect:
-                protect_cmd, _, reason = THREAT_RESPONSES.get(
-                    threat_name, (RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Unknown threat.")
+                profile = THREAT_RESPONSES.get(
+                    threat_name,
+                    HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, "Unknown threat."),
                 )
+                protect_cmd = profile.protect_response
                 label = HUMAN_LABELS.get(threat_name, threat_name)
-                logger.protect_action(node_id, protect_cmd, f"[{label}] {reason}")
+                logger.protect_action(
+                    node_id,
+                    protect_cmd,
+                    f"[{profile.group}] [{label}] {profile.description}",
+                )
                 self._send_command(node_id, protect_cmd)
                 sent_protect.add(threat_name)
                 heal_streaks[threat_name] = 0
@@ -131,12 +150,22 @@ class QuarantineManager:
             streak = heal_streaks.get(threat_name, 0) + 1
             heal_streaks[threat_name] = streak
 
-            _, heal_cmd, _ = THREAT_RESPONSES.get(
-                threat_name, (None, RESPONSE_RELEASE, "")
+            profile = THREAT_RESPONSES.get(
+                threat_name,
+                HealingProfile("containment", RESPONSE_QUARANTINE, RESPONSE_RELEASE, ""),
             )
+            heal_cmd = profile.heal_response
             logger.quarantine_check(node_id, node.anomaly_score, streak, config.RECOVERY_WINDOW)
 
             if streak >= config.RECOVERY_WINDOW:
+                if profile.group == "containment" and node.status == NodeStatus.QUARANTINED:
+                    if node.anomaly_score < config.RECOVERY_THRESHOLD:
+                        sent_protect.discard(threat_name)
+                        heal_streaks[threat_name] = 0
+                    else:
+                        self._store.reset_clean_streak(node_id)
+                    continue
+
                 logger.self_heal(node_id, heal_cmd)
                 self._send_command(node_id, heal_cmd)
                 sent_protect.discard(threat_name)
