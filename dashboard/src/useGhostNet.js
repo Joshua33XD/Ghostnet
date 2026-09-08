@@ -1,25 +1,7 @@
 // WebSocket hook — streams all GhostNet events in real time
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { getApiUrl, getWsUrl } from './apiConfig.js'
 
-// In production (Vercel) point to the Railway backend via VITE_API_URL env var.
-// In local dev, the Vite proxy forwards /nodes and /alerts to localhost:8000.
-const IS_DEV = import.meta.env.DEV
-const API_URL = IS_DEV
-  ? 'http://localhost:8000'
-  : (import.meta.env.VITE_API_URL ?? '')
-
-// Derive WebSocket URL from API_URL
-function getWsUrl() {
-  if (IS_DEV) return 'ws://localhost:8000/ws/events'
-  if (import.meta.env.VITE_API_URL) {
-    const base = import.meta.env.VITE_API_URL.replace(/^http/, 'ws')
-    return `${base}/ws/events`
-  }
-  // fallback: same origin
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/ws/events`
-}
-const WS_URL = getWsUrl()
 const MAX_EVENTS = 300
 const POLL_INTERVAL_MS = 2000
 const MAX_HISTORY = 60  // score history points per node
@@ -37,7 +19,9 @@ export function useGhostNet() {
   // ── Fetch node list via REST ──────────────────────────────────────────────
   const fetchNodes = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/nodes`)
+      const apiUrl = getApiUrl()
+      if (!apiUrl) return
+      const res = await fetch(`${apiUrl}/nodes`)
       if (!res.ok) return
       const list = await res.json()
       setNodes(prev => {
@@ -63,7 +47,9 @@ export function useGhostNet() {
   // ── Fetch OSI summary (v3) ────────────────────────────────────────────────
   const fetchOSI = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/osi/summary`)
+      const apiUrl = getApiUrl()
+      if (!apiUrl) return
+      const res = await fetch(`${apiUrl}/osi/summary`)
       if (!res.ok) return
       const data = await res.json()
       setOsiSummary(data)
@@ -73,7 +59,8 @@ export function useGhostNet() {
   // ── Release a quarantined node ────────────────────────────────────────────
   const releaseNode = useCallback(async (nodeId) => {
     try {
-      await fetch(`${API_URL}/nodes/${nodeId}/release`, { method: 'POST' })
+      const apiUrl = getApiUrl()
+      await fetch(`${apiUrl}/nodes/${nodeId}/release`, { method: 'POST' })
       await fetchNodes()
     } catch (e) {
       console.error('Release failed', e)
@@ -95,10 +82,11 @@ export function useGhostNet() {
 
   // ── WebSocket connection ───────────────────────────────────────────────────
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
+    const wsUrl = getWsUrl()
+    if (!wsUrl || wsRef.current?.readyState === WebSocket.OPEN) return
     setWsStatus('connecting')
 
-    const ws = new WebSocket(WS_URL)
+    const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {

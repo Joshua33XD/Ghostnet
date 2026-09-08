@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { Play, Shield, Flame, Activity, RefreshCw, Radio } from 'lucide-react'
+import { Activity, Flame, Radio } from 'lucide-react'
+import { getApiUrl } from '../apiConfig.js'
 
-export default function AttackControlBar({ onTriggerSimulator }) {
+export default function AttackControlBar() {
   const [activeMode, setActiveMode] = useState('IDLE')
   const [simNodeId, setSimNodeId] = useState('demo-cam-01')
   const [isInjecting, setIsInjecting] = useState(false)
@@ -11,38 +12,31 @@ export default function AttackControlBar({ onTriggerSimulator }) {
     setIsInjecting(true)
     try {
       const isAttack = mode !== 'NORMAL'
-      const payload = {
-        node_id: simNodeId,
-        timestamp: Date.now() / 1000,
-        protocol: 'HTTP',
-        status: isAttack ? 'ATTACK' : 'NORMAL',
-        anomaly_score: isAttack ? 0.94 : 0.08,
-        features: {
-          rate: isAttack ? 48.5 : 1.2,
-          payload_size: isAttack ? 2048 : 128,
-          layer: isAttack ? 'L7 Application' : 'L4 Transport',
-          attack_type: isAttack ? mode : 'None'
-        }
-      }
-
-      await fetch('http://localhost:8000/telemetry', {
+      await fetch(`${getApiUrl()}/ingest/telemetry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          node_id: simNodeId,
+          seq: Math.floor(Math.random() * 999999),
+          ts: Date.now() / 1000,
+          status: isAttack ? 'ATTACK' : 'NORMAL',
+          padding: isAttack ? 'x'.repeat(80) : '',
+          attack_type: isAttack ? mode : 'None',
+        }),
       })
     } catch (e) {
-      console.warn('Simulation injection dispatched:', e)
+      console.warn('Simulation injection failed:', e)
     } finally {
       setTimeout(() => setIsInjecting(false), 800)
     }
   }
 
   return (
-    <div className="attack-control-glass-bar">
+    <div className="attack-control-bar">
       <div className="flex items-center gap-2">
         <Radio className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-        <span className="text-[11px] font-mono font-bold tracking-wider text-white/90">
-          SIMULATOR INJECTOR:
+        <span className="text-[11px] font-mono font-bold tracking-wider">
+          SIMULATOR {activeMode !== 'IDLE' ? `· ${activeMode}` : ''}
         </span>
       </div>
 
@@ -53,44 +47,26 @@ export default function AttackControlBar({ onTriggerSimulator }) {
             type="text"
             value={simNodeId}
             onChange={e => setSimNodeId(e.target.value)}
-            className="bg-transparent text-white font-mono text-xs w-24 outline-none border-none"
+            className="attack-input"
           />
         </div>
 
         <button
-          className="sim-btn normal"
+          className="attack-btn"
           onClick={() => handleInjectTelemetry('NORMAL')}
           disabled={isInjecting}
         >
-          <Activity className="w-3 h-3 text-emerald-400" />
-          <span>Normal Baseline</span>
+          <Activity className="w-3 h-3" />
+          <span>Normal</span>
         </button>
 
         <button
-          className="sim-btn attack"
+          className="attack-btn"
           onClick={() => handleInjectTelemetry('HTTP_FLOOD')}
           disabled={isInjecting}
         >
-          <Flame className="w-3 h-3 text-rose-400" />
-          <span>HTTP Flood (L7)</span>
-        </button>
-
-        <button
-          className="sim-btn attack-orange"
-          onClick={() => handleInjectTelemetry('MQTT_SPOOF')}
-          disabled={isInjecting}
-        >
-          <Flame className="w-3 h-3 text-amber-400" />
-          <span>MQTT Spoof (L4)</span>
-        </button>
-
-        <button
-          className="sim-btn attack-purple"
-          onClick={() => handleInjectTelemetry('SLOWLORIS')}
-          disabled={isInjecting}
-        >
-          <Flame className="w-3 h-3 text-purple-400" />
-          <span>Slowloris DOS</span>
+          <Flame className="w-3 h-3" />
+          <span>HTTP Flood</span>
         </button>
       </div>
     </div>

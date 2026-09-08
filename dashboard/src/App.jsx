@@ -16,6 +16,8 @@ import ThreatAnalysisPanel, { MLGauge } from './components/ThreatAnalysisPanel.j
 import RouterPanel from './components/RouterPanel.jsx'
 import { initTheme, cycleTheme, applyTheme, THEMES } from './utils/theme.js'
 import { Shield } from 'lucide-react'
+import SettingsPanel from './components/SettingsPanel.jsx'
+import { getApiUrl } from './apiConfig.js'
 
 export default function App() {
   const { nodes, events, wsStatus, releaseNode, scoreHistory, osiSummary } = useGhostNet()
@@ -46,6 +48,7 @@ export default function App() {
   const allNodes = Object.values(nodes).sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9))
   const nodeList = statusFilter ? allNodes.filter(n => n.status === statusFilter) : allNodes
   const isLoading = wsStatus === 'connecting' && allNodes.length === 0
+  const apiConfigured = Boolean(getApiUrl())
 
   const currentSelectedNode = selectedNode
     ? (nodes[selectedNode.node_id] ?? selectedNode)
@@ -250,6 +253,11 @@ export default function App() {
         />
 
         <main className="app-main">
+          {!apiConfigured && (
+            <div className="api-missing-banner">
+              No Railway API URL yet. Open Settings, paste your public Railway domain, then Save and reconnect.
+            </div>
+          )}
           <div className="main-scroll">
             {currentView === 'overview' && <OverviewView />}
             {currentView === 'devices' && <DevicesView />}
@@ -293,27 +301,14 @@ export default function App() {
               </div>
             )}
             {currentView === 'settings' && (
-              <div className="panel">
+              <div className="panel" style={{ flex: 1, overflow: 'auto' }}>
                 <div className="panel-header"><div className="panel-title">Settings</div></div>
                 <div className="panel-body">
-                  <div style={{ padding: 'var(--sp-4) 0' }}>
-                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Appearance</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-4)' }}>
-                      Choose your dashboard theme
-                    </div>
-                    <div className="theme-picker">
-                      {THEMES.map(t => (
-                        <button
-                          key={t}
-                          className={`theme-picker-btn${theme === t ? ' active' : ''}`}
-                          onClick={() => setThemeDirect(t)}
-                        >
-                          <span className={`theme-picker-swatch theme-picker-swatch--${t}`} />
-                          {t.charAt(0).toUpperCase() + t.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <SettingsPanel
+                    theme={theme}
+                    themes={THEMES}
+                    onThemeDirect={setThemeDirect}
+                  />
                 </div>
               </div>
             )}
