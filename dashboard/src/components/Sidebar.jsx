@@ -1,5 +1,7 @@
-// Sidebar v5 — full labels + node health summary
+// Sidebar v5 — animated with layoutId sliding indicator
+import { motion } from 'framer-motion'
 import { Shield, Map, Radio, AlertTriangle, Cpu, Server, FileText, Settings } from 'lucide-react'
+import { stagger, slideInLeft } from '../motion.js'
 
 const NAV = [
   { id:'overview',   label:'Overview',       icon:Shield },
@@ -28,28 +30,44 @@ export default function Sidebar({ currentView, onViewChange, nodes, eventCount }
         </div>
       </div>
 
-      <nav className="sidebar-nav">
+      <motion.nav
+        className="sidebar-nav"
+        variants={stagger(0.03)}
+        initial="hidden"
+        animate="visible"
+      >
         {NAV.map(item => {
           const Icon = item.icon
+          const isActive = currentView === item.id
           const badge = item.id === 'threats' && quarantinedCount > 0 ? quarantinedCount
                       : item.id === 'events' && eventCount > 0 ? Math.min(eventCount, 99)
                       : null
           return (
-            <button
+            <motion.button
               key={item.id}
-              className={`sidebar-item${currentView === item.id ? ' active' : ''}`}
+              className={`sidebar-item${isActive ? ' active' : ''}`}
               onClick={() => onViewChange(item.id)}
-              aria-current={currentView === item.id ? 'page' : undefined}
+              aria-current={isActive ? 'page' : undefined}
+              variants={slideInLeft}
+              whileHover={{ x: 2, transition: { duration: 0.15 } }}
+              whileTap={{ scale: 0.97 }}
+              style={{ position: 'relative' }}
             >
-              <Icon size={15} style={{ flexShrink: 0 }} />
-              {item.label}
-              {badge && <span className="sidebar-item-badge">{badge}</span>}
-            </button>
+              {isActive && (
+                <motion.div
+                  layoutId="sidebar-active-bg"
+                  className="sidebar-active-indicator"
+                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                />
+              )}
+              <Icon size={15} style={{ flexShrink: 0, position: 'relative', zIndex: 1 }} />
+              <span style={{ position: 'relative', zIndex: 1 }}>{item.label}</span>
+              {badge && <span className="sidebar-item-badge" style={{ position: 'relative', zIndex: 1 }}>{badge}</span>}
+            </motion.button>
           )
         })}
-      </nav>
+      </motion.nav>
 
-      {/* Footer */}
       <div className="sidebar-footer">
         <div className="sidebar-footer-text">
           Secure · Monitor · Heal<br />

@@ -1,11 +1,13 @@
-// NodeDetailDrawer — slide-in detail panel for a single node
+// NodeDetailDrawer — spring-physics slide-in detail panel
 import { useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
 import { getStatusIcon, formatElapsed, formatRate, formatBytes, getTrustScore, getTrustColor } from '../utils.js'
 import LifecycleStepper from './LifecycleStepper.jsx'
+import { SPRING, stagger, fadeUp } from '../motion.js'
 
 const TIMELINE_TAGS = new Set(['QUARANTINE', 'RECOVERED', 'RECOVERY-CHECK', 'SELF-HEAL', 'PROTECT'])
 
@@ -64,18 +66,26 @@ export default function NodeDetailDrawer({ node, history, events, onClose, onRel
   const hasChart = chartData.length >= 2
 
   return (
-    <div
+    <motion.div
       className="drawer-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Node detail: ${node.node_id}`}
     >
-      <div
+      <motion.div
         className="drawer"
         ref={drawerRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={SPRING.gentle}
       >
         {/* ── Header ─────────────────────────────────────── */}
         <div className="drawer-header">
@@ -266,7 +276,7 @@ export default function NodeDetailDrawer({ node, history, events, onClose, onRel
             </button>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

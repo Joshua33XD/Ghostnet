@@ -1,6 +1,8 @@
-// EventLog — right-panel real-time event feed with relative timestamps
+// EventLog — staggered entry animations
 import { useRef, useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { getEventIcon, isCriticalTag, isGoodTag, formatRelativeTime, formatExactTime } from '../utils.js'
+import { stagger, fadeUp } from '../motion.js'
 
 export default function EventLog({ events, onClear, wsStatus }) {
   const listRef = useRef(null)
@@ -44,15 +46,20 @@ export default function EventLog({ events, onClear, wsStatus }) {
           <p>Start GhostNet and connect a node to see live events here.</p>
         </div>
       ) : (
-        <div
+        <motion.div
           className="event-log-list"
           ref={listRef}
           onScroll={handleScroll}
+          variants={stagger(0.04)}
+          initial="hidden"
+          animate="visible"
         >
-          {events.map(evt => (
-            <EventItem key={evt._id} evt={evt} />
-          ))}
-        </div>
+          <AnimatePresence initial={false}>
+            {events.map(evt => (
+              <MotionEventItem key={evt._id} evt={evt} />
+            ))}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       {newCount > 0 && !atBottom && (
@@ -64,7 +71,7 @@ export default function EventLog({ events, onClear, wsStatus }) {
   )
 }
 
-function EventItem({ evt }) {
+function MotionEventItem({ evt }) {
   const critical = isCriticalTag(evt.tag)
   const good = isGoodTag(evt.tag)
 
@@ -74,11 +81,17 @@ function EventItem({ evt }) {
     good ? 'recovered' : '',
   ].filter(Boolean).join(' ')
 
-  // Normalise tag for CSS class (handle "RECOVERY-CHECK")
   const tagClass = evt.tag?.replace(/\s+/g, '-') ?? 'INFO'
 
   return (
-    <div className={cls}>
+    <motion.div
+      className={cls}
+      variants={fadeUp}
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.25 } }}
+      exit={{ opacity: 0, x: -20, transition: { duration: 0.15 } }}
+    >
       <span className="event-icon">{getEventIcon(evt.tag)}</span>
 
       <div className="event-meta">
@@ -96,7 +109,7 @@ function EventItem({ evt }) {
       </div>
 
       <div className="event-msg">{evt.message}</div>
-    </div>
+    </motion.div>
   )
 }
 

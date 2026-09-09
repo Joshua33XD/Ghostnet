@@ -1,9 +1,11 @@
 import { TrendingDown } from 'lucide-react'
+import { motion } from 'framer-motion'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import { getTrustScore } from '../utils.js'
+import { SPRING, stagger, fadeUp } from '../motion.js'
 
 function TrustTrendChart({ scoreHistory }) {
   const nodeIds = Object.keys(scoreHistory).slice(0, 5)
@@ -62,7 +64,7 @@ function AnomalyTable({ events }) {
   )
 
   return (
-    <div>
+    <motion.div variants={stagger(0.08)} initial="hidden" animate="visible">
       {anomalies.map((e, i) => {
         const t = (e.event_type ?? e.tag ?? '').toUpperCase()
         const actionClass = t.includes('QUARANTINE') ? 'investigating' : t.includes('RECOVERED') ? 'resolved' : 'monitoring'
@@ -71,15 +73,15 @@ function AnomalyTable({ events }) {
           ? new Date(e.timestamp * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
           : '—'
         return (
-          <div key={e.id ?? i} className="anomaly-row">
+          <motion.div key={e.id ?? i} className="anomaly-row" variants={fadeUp}>
             <span className="anomaly-time">{time}</span>
             <span className="anomaly-node">{e.node_id ?? '—'}</span>
             <span className="anomaly-type">{e.message?.slice(0, 40) ?? t}</span>
             <span className={`anomaly-action ${actionClass}`}>{actionLabel}</span>
-          </div>
+          </motion.div>
         )
       })}
-    </div>
+    </motion.div>
   )
 }
 
@@ -89,21 +91,34 @@ export function MLGauge({ nodes }) {
     ? list.reduce((s, n) => s + (n.anomaly_score ?? 0), 0) / list.length
     : 0
   const trust = Math.round((1 - avg) * 100)
-  const r = 52, circ = 2 * Math.PI * r
+  const r = 52
   const color = trust >= 75 ? 'var(--status-healthy)' : trust >= 50 ? 'var(--status-warn)' : 'var(--status-danger)'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+    <motion.div
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={SPRING.gentle}
+    >
       <svg width={130} height={130} viewBox="0 0 130 130">
         <circle cx={65} cy={65} r={r} fill="none" stroke="var(--border)" strokeWidth={8} />
-        <circle cx={65} cy={65} r={r} fill="none"
+        <motion.circle
+          cx={65} cy={65} r={r} fill="none"
           stroke={color} strokeWidth={8}
-          strokeDasharray={`${circ * trust / 100} ${circ}`}
           strokeLinecap="round"
           transform="rotate(-90 65 65)"
-          style={{ transition: 'stroke-dasharray 0.8s ease' }}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: trust / 100 }}
+          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
         />
         <text x={65} y={60} textAnchor="middle" fill="var(--text-primary)"
-          fontSize={22} fontWeight="700" fontFamily="var(--font-mono)">{trust}%</text>
+          fontSize={22} fontWeight="700" fontFamily="var(--font-mono)">
+          <motion.tspan
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+          >{trust}%</motion.tspan>
+        </text>
         <text x={65} y={76} textAnchor="middle" fill="var(--text-muted)"
           fontSize={9}>Anomaly Score</text>
         <text x={65} y={90} textAnchor="middle" fill={color}
@@ -113,7 +128,7 @@ export function MLGauge({ nodes }) {
         Avg anomaly: {avg.toFixed(4)}<br />
         {trust >= 75 ? '✓ Network healthy' : trust >= 50 ? '⚠ Elevated risk' : '⛔ Critical threat level'}
       </div>
-    </div>
+    </motion.div>
   )
 }
 

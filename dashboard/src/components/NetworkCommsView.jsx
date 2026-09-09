@@ -2,7 +2,9 @@
 // Shows packet journey: APP -> TCP -> IP -> ETHERNET -> PHYSICAL -> ROUTER -> RECEIVER
 // Integrates with real node security state (quarantined = blocked path)
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Send, ChevronDown, ChevronRight, Shield, AlertTriangle, XCircle, Zap } from 'lucide-react'
+import { SPRING, fadeUp } from '../motion.js'
 
 // ── Layer definitions ──────────────────────────────────────────────────────
 const LAYERS = [
@@ -524,11 +526,17 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
             </div>
 
             {/* RECEIVED message + ACK */}
+            <AnimatePresence mode="wait">
             {stage === STAGE.RECEIVED && packet && (
-              <div style={{
+              <motion.div
+                key="received"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={SPRING.gentle}
+                style={{
                 marginTop:16, padding:'12px 20px', borderRadius:8,
                 background:'var(--status-healthy-bg)', border:'1px solid var(--status-healthy-border)',
-                animation:'topology-pulse 0.6s ease-out 1',
               }}>
                 <div style={{ fontSize:'var(--text-xs)', color:'var(--status-healthy)', fontFamily:'var(--font-mono)', fontWeight:700, marginBottom:4 }}>
                   ✓ MESSAGE RECEIVED
@@ -536,26 +544,40 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
                 <div style={{ fontSize:'var(--text-lg)', color:'var(--text-primary)', fontWeight:700 }}>
                   "{packet.payload}"
                 </div>
-              </div>
+              </motion.div>
             )}
 
-            {ackVisible && (
-              <div style={{ marginTop:8, display:'flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:6, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)' }}>
+            {ackVisible && packet && (
+              <motion.div
+                key="ack"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ ...SPRING.gentle, delay: 0.1 }}
+                style={{ marginTop:8, display:'flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:6, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)' }}
+              >
                 <span style={{ fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)', color:'#a78bfa', fontWeight:700 }}>
-                  ACK {packet?.seqNum + (packet?.payloadBytes ?? 0)} → {packet?.srcIp}:{packet?.srcPort}
+                  ACK {packet.seqNum + (packet.payloadBytes ?? 0)} → {packet.srcIp}:{packet.srcPort}
                 </span>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
 
             {isBlocked && (
-              <div style={{ marginTop:16, padding:'10px 20px', borderRadius:8, background:'var(--status-danger-bg)', border:'1px solid var(--status-danger-border)', textAlign:'center' }}>
+              <motion.div
+                key="blocked"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={SPRING.gentle}
+                style={{ marginTop:16, padding:'10px 20px', borderRadius:8, background:'var(--status-danger-bg)', border:'1px solid var(--status-danger-border)', textAlign:'center' }}
+              >
                 <div style={{ fontSize:'var(--text-sm)', color:'var(--status-danger)', fontWeight:700, fontFamily:'var(--font-mono)' }}>
                   COMMUNICATION BLOCKED
                 </div>
                 <div style={{ fontSize:'var(--text-xs)', color:'var(--text-secondary)', marginTop:4 }}>
                   Quarantined node in communication path — packet dropped by GhostNet
                 </div>
-              </div>
+              </motion.div>
             )}
           </div>
         </div>
@@ -577,12 +599,23 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
                   <div style={{ padding:'16px 12px', fontSize:'var(--text-xs)', color:'var(--text-muted)', textAlign:'center' }}>
                     Press "Send Data" to begin
                   </div>
-                ) : log.map(e => (
-                  <div key={e.id} style={{ display:'grid', gridTemplateColumns:'44px 1fr', gap:4, padding:'4px 12px', borderBottom:'1px solid var(--border-subtle)' }}>
-                    <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text-muted)', paddingTop:1 }}>{e.ts}</span>
-                    <span style={{ fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)', color: e.color ?? 'var(--text-secondary)', lineHeight:1.4 }}>{e.msg}</span>
-                  </div>
-                ))}
+                ) : (
+                  <AnimatePresence initial={false}>
+                    {log.map(e => (
+                      <motion.div
+                        key={e.id}
+                        variants={fadeUp}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0, transition: { duration: 0.2 } }}
+                        exit={{ opacity: 0, x: -8, transition: { duration: 0.1 } }}
+                        style={{ display:'grid', gridTemplateColumns:'44px 1fr', gap:4, padding:'4px 12px', borderBottom:'1px solid var(--border-subtle)' }}
+                      >
+                        <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text-muted)', paddingTop:1 }}>{e.ts}</span>
+                        <span style={{ fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)', color: e.color ?? 'var(--text-secondary)', lineHeight:1.4 }}>{e.msg}</span>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                )}
               </div>
             </div>
           )}

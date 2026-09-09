@@ -1,7 +1,14 @@
 """
-Real external load-testing attack against GhostNet.
-Run with:  locust -f locustfile.py --host http://localhost:8000
-Then open http://localhost:8089 to control it (set Users + spawn rate, click Start).
+Load-test GhostNet ingest from the Locust web UI (no further terminal commands).
+
+Local:
+  Double-click start-locust.bat
+  or: locust -f locustfile.py --host http://localhost:8000
+
+Hosted Railway:
+  Put the public URL in locust.host.txt (see locust.host.example), then start-locust.bat.
+
+Then open http://localhost:8089 — set Users + spawn rate, click Start.
 """
 import random
 import time

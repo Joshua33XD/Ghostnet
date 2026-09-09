@@ -1,16 +1,14 @@
-// NodeCard — trust-first hierarchy redesign
-// Level 1: Node ID + Status pill
-// Level 2: Trust Score (large, semantic color)
-// Level 3: Reason (why suspicious/quarantined)
-// Level 4: [Details] collapsible — OSI, ML, hashes, CPU, RAM etc.
-import { useState } from 'react'
-import { getTrustScore, getTrustColor, getScoreClass, formatElapsed, formatRate, formatBytes } from '../utils.js'
+// NodeCard — trust-first hierarchy with Framer Motion micro-interactions
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { getTrustScore, getTrustColor, formatElapsed, formatRate, formatBytes } from '../utils.js'
 import ThreatBadge from './ThreatBadge.jsx'
 import OSIBadge from './OSIBadge.jsx'
 import MLScore from './MLScore.jsx'
 import LifecycleStepper from './LifecycleStepper.jsx'
 import { AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { fadeUp, SPRING } from '../motion.js'
 
 /* ── Skeleton ─────────────────────────────────────────────── */
 export function NodeCardSkeleton() {
@@ -90,6 +88,22 @@ function Sparkline({ history, color }) {
 export default function NodeCard({ node, onRelease, onSelect, history }) {
   const [expanded, setExpanded] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [flash, setFlash] = useState(null)
+  const prevStatus = useRef(node?.status)
+
+  // Status-change feedback (quarantine flash / recovery sweep)
+  useEffect(() => {
+    if (!node) return
+    if (prevStatus.current && prevStatus.current !== node.status) {
+      if (node.status === 'QUARANTINED') setFlash('danger')
+      else if (node.status === 'HEALTHY') setFlash('recover')
+      else if (node.status === 'SUSPICIOUS') setFlash('warn')
+      const t = setTimeout(() => setFlash(null), 900)
+      prevStatus.current = node.status
+      return () => clearTimeout(t)
+    }
+    prevStatus.current = node?.status
+  }, [node])
 
   if (!node) return null
 
@@ -97,7 +111,6 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
   const trustColor = getTrustColor(node.anomaly_score ?? 0)
   const reason     = getPrimaryReason(node)
   const uptime     = formatElapsed(node.first_seen)
-  const isActionable = node.status === 'QUARANTINED' || node.status === 'SUSPICIOUS'
 
   // Build "details" items — all the technical depth
   const detailStats = [
@@ -113,14 +126,33 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
   if (node.storage_pct != null) detailStats.push({ label:'Disk',  value:`${node.storage_pct?.toFixed(0)}%` })
 
   return (
-    <div
+    <motion.div
       className={`node-card ${node.status}`}
       onClick={() => onSelect?.(node)}
       role="button"
       tabIndex={0}
       onKeyDown={e => e.key === 'Enter' && onSelect?.(node)}
       aria-label={`Node ${node.node_id} — ${node.status} — Trust ${trustPct}%`}
+      variants={fadeUp}
+      whileHover={{ y: -3, transition: SPRING.snappy }}
+      whileTap={{ scale: 0.98 }}
+      layout
     >
+      {/* Status-change flash overlay */}
+      <AnimatePresence>
+        {flash && (
+          <motion.div
+            className="node-status-flash"
+            style={{
+              ['--flash-color']: flash === 'danger' ? 'var(--status-danger)' : flash === 'warn' ? 'var(--status-warn)' : 'var(--status-healthy)',
+            }}
+            initial={{ opacity: 0.55, scale: 0.99 }}
+            animate={{ opacity: 0, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.9, ease: 'easeOut' }}
+          />
+        )}
+      </AnimatePresence>
       {/* ── LEVEL 1: Identity + Status ─────────────────────── */}
       <div className="node-card-header">
         <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
@@ -254,6 +286,6 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

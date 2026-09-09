@@ -490,12 +490,13 @@ html.theme-colorful .theme-toggle-btn{
 }
 .sidebar-item:hover{background:var(--surface-raised);color:var(--text-primary);}
 .sidebar-item.active{
-  background:var(--accent-bg);color:var(--accent);font-weight:600;
+  color:var(--accent);font-weight:600;
 }
-.sidebar-item.active::before{
-  content:'';position:absolute;left:0;top:4px;bottom:4px;
-  width:3px;border-radius:0 3px 3px 0;
-  background:var(--accent);
+.sidebar-active-indicator{
+  position:absolute;inset:0;
+  background:var(--accent-bg);
+  border-radius:0;
+  z-index:0;
 }
 .sidebar-item-badge{
   margin-left:auto;font-size:9px;font-weight:700;
@@ -806,6 +807,9 @@ html.theme-colorful .node-card:hover{border-color:var(--accent-border);box-shado
 .node-card.SUSPICIOUS::before{background:var(--status-warn);}
 .node-card.QUARANTINED::before{background:var(--status-danger);}
 .node-card.OFFLINE::before{background:var(--status-offline);}
+.node-status-flash{position:absolute;inset:0;pointer-events:none;border-radius:var(--radius-md);
+  background:radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--flash-color) 35%, transparent), transparent 70%);
+  border:1px solid color-mix(in srgb, var(--flash-color) 60%, transparent);}
 .node-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--sp-3);}
 .node-id{font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600;color:var(--text-primary);}
 .node-ip{font-size:var(--text-xs);color:var(--text-muted);font-family:var(--font-mono);margin-top:1px;}
@@ -1053,3 +1057,157 @@ html.theme-clean .stat-card{
 }
 .sim-btn.normal{border-color:var(--status-healthy-border);color:var(--status-healthy);}
 .sim-btn.attack{border-color:var(--status-danger-border);color:var(--status-danger);}
+
+/* ═══════════════════════════════════════════════════════
+   GHOSTNET v6 — VISUAL RESTYLE
+   Ambient backdrop, layered surfaces, HUD polish.
+   Theme-aware; respects prefers-reduced-motion.
+   ═══════════════════════════════════════════════════════ */
+
+/* Stacking context so the ambient layers stay behind content */
+.app-root{isolation:isolate;}
+.app-header,.app-layout{position:relative;z-index:1;}
+
+/* ── Ambient backdrop: faint grid + drifting glow orbs ── */
+.app-root::before{
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    linear-gradient(rgba(59,130,246,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.05) 1px, transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 0%, #000 35%, transparent 78%);
+  mask-image:radial-gradient(ellipse at 50% 0%, #000 35%, transparent 78%);
+}
+.app-root::after{
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(620px 440px at 10% -6%, rgba(59,130,246,0.16), transparent 62%),
+    radial-gradient(540px 400px at 96% 8%,  rgba(139,92,246,0.13), transparent 60%),
+    radial-gradient(720px 520px at 72% 108%, rgba(34,197,94,0.09), transparent 62%),
+    radial-gradient(480px 340px at 40% 55%,  rgba(34,211,238,0.06), transparent 60%);
+  animation:ghost-drift 18s ease-in-out infinite alternate;
+}
+@keyframes ghost-drift{
+  from{opacity:0.7;transform:translate3d(0,0,0) scale(1)}
+  to  {opacity:1;  transform:translate3d(8px,-10px,0) scale(1.05)}
+}
+html.theme-clean .app-root::before{background:none;}
+html.theme-clean .app-root::after{opacity:0.45;}
+html.theme-colorful .app-root::before{background:none;}
+html.theme-colorful .app-root::after{
+  background:
+    radial-gradient(620px 440px at 10% -6%, rgba(255,255,255,0.4), transparent 62%),
+    radial-gradient(540px 400px at 96% 8%,  rgba(255,255,255,0.32), transparent 60%),
+    radial-gradient(720px 520px at 72% 108%, rgba(255,255,255,0.2), transparent 62%);
+  opacity:0.55;
+}
+
+/* ── Header: glass bar + gradient hairline ───────────── */
+.app-header{
+  background:linear-gradient(180deg, var(--surface-raised), var(--surface));
+  box-shadow:0 1px 0 rgba(255,255,255,0.03) inset;
+}
+.app-header::after{
+  content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg, transparent, var(--accent-border), transparent);
+  opacity:0.7;
+}
+.theme-toggle-btn,.hud-icon-btn,.avatar-btn{transition:all var(--dur-fast),border-color var(--dur-fast),box-shadow var(--dur-fast);}
+.theme-toggle-btn:hover,.hud-icon-btn:hover,.avatar-btn:hover{
+  box-shadow:0 0 0 1px var(--accent-border),0 4px 14px -6px var(--accent-soft);
+}
+
+/* ── Sidebar: brand glow + active sheen ──────────────── */
+.sidebar-logo-icon{
+  background:linear-gradient(135deg, var(--accent-soft), transparent);
+  box-shadow:0 0 16px -4px var(--accent-soft);
+}
+.sidebar-nav{animation:none;}
+.sidebar-item.active{background:linear-gradient(90deg, var(--accent-bg), transparent);}
+.sidebar-active-indicator{
+  border-radius:6px;margin:3px 6px;
+  background:linear-gradient(90deg, var(--accent-bg), transparent);
+  box-shadow:inset 2px 0 0 var(--accent),0 0 18px -6px var(--accent-soft);
+}
+.sidebar-item{transition:color var(--dur-fast),background var(--dur-fast);}
+
+/* ── Surfaces: layered gradient + hairline + glow ────── */
+.panel,.stat-card,.node-card,.glass-section-box,
+.comms-topology,.comms-controls,.packet-inspector,
+.pipeline-header,.pipeline-flow-track,.pipeline-node-card,
+.node-matrix-panel,.drawer,.skeleton-card{
+  background-image:linear-gradient(180deg,
+    color-mix(in srgb, var(--surface) 88%, #ffffff 12%), var(--surface) 130px);
+}
+.panel,.stat-card,.node-card,.glass-section-box,
+.comms-topology,.comms-controls,.packet-inspector,
+.pipeline-header,.pipeline-flow-track,.pipeline-node-card,
+.node-matrix-panel,.quick-action-btn,.skeleton-card{position:relative;}
+
+.panel::after,.stat-card::after,.node-card::after{
+  content:'';position:absolute;left:1px;right:1px;top:0;height:1px;
+  background:linear-gradient(90deg, transparent, var(--accent-border), transparent);
+  opacity:0.5;pointer-events:none;
+}
+.panel,.stat-card{
+  box-shadow:0 1px 0 rgba(255,255,255,0.03) inset,0 10px 30px -22px rgba(0,0,0,0.6);
+}
+.stat-card:hover,.node-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 12px 32px -18px var(--accent-soft);}
+html.theme-clean .stat-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 6px 18px -10px rgba(37,99,235,0.25);}
+html.theme-clean .node-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 6px 18px -10px rgba(37,99,235,0.25);}
+html.theme-colorful .stat-card:hover,html.theme-colorful .node-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 10px 30px -12px var(--accent-soft);}
+
+.panel-header{border-bottom-color:var(--border-subtle);}
+.panel-title{letter-spacing:0.01em;}
+.panel-title-icon{
+  background:linear-gradient(135deg, var(--purple-bg), var(--accent-bg));
+  border:1px solid var(--accent-border);
+  box-shadow:0 0 12px -4px var(--accent-soft);
+}
+
+/* Stat card icon glow */
+.stat-card-icon{position:relative;}
+.stat-card-icon::after{
+  content:'';position:absolute;inset:-6px;border-radius:12px;z-index:-1;
+  background:radial-gradient(circle, var(--accent-soft), transparent 70%);
+  opacity:0;transition:opacity var(--dur-mid);
+}
+.stat-card:hover .stat-card-icon::after{opacity:1;}
+
+/* ── Node card trust score glow ───────────────────────── */
+.node-trust-score{text-shadow:0 0 18px color-mix(in srgb, currentColor 45%, transparent);}
+
+/* ── Pills, tags, badges ─────────────────────────────── */
+.system-status-pill,.status-pill,.trust-badge,.anomaly-action,.event-tag{
+  box-shadow:0 2px 8px -4px rgba(0,0,0,0.4);
+}
+
+/* ── Empty states: breathing halo ────────────────────── */
+.glass-empty-state,.empty-state{position:relative;}
+.glass-empty-state svg,.empty-state .empty-icon{
+  animation:empty-breathe 3s ease-in-out infinite;
+  opacity:0.45;
+}
+@keyframes empty-breathe{
+  0%,100%{opacity:0.25;transform:scale(0.95)}
+  50%    {opacity:0.55;transform:scale(1.05)}
+}
+
+/* ── Primary action affordance ───────────────────────── */
+.send-data-btn,.release-btn,.confirm-yes-btn,.settings-btn.primary{
+  box-shadow:0 4px 16px -8px var(--accent-soft);
+}
+.send-data-btn:hover{box-shadow:0 6px 20px -8px var(--accent-soft);transform:translateY(-1px);}
+
+/* ── ML gauge glass ──────────────────────────────────── */
+.ml-gauge-label{letter-spacing:0.02em;}
+
+/* ── Drawer & map polish ─────────────────────────────── */
+.drawer{box-shadow:-18px 0 50px -24px rgba(0,0,0,0.6);}
+.map-cloud text{letter-spacing:0.06em;}
+
+/* ── Reduced motion: freeze ambient effects ──────────── */
+@media (prefers-reduced-motion:reduce){
+  .app-root::after{animation:none;opacity:1;}
+  .glass-empty-state svg,.empty-state .empty-icon{animation:none;opacity:0.4;}
+}
