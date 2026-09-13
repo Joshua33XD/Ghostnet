@@ -12,7 +12,9 @@ import NodeCard, { NodeCardSkeleton } from './components/NodeCard.jsx'
 import EventLog from './components/EventLog.jsx'
 import NetworkCommsView from './components/NetworkCommsView.jsx'
 import PipelineGraph from './components/PipelineGraph.jsx'
+import SelfHealOverlay from './components/SelfHealOverlay.jsx'
 import NodeDetailDrawer from './components/NodeDetailDrawer.jsx'
+import DetectionToast from './components/DetectionToast.jsx'
 import ThreatAnalysisPanel, { MLGauge } from './components/ThreatAnalysisPanel.jsx'
 import RouterPanel from './components/RouterPanel.jsx'
 import { initTheme, cycleTheme, applyTheme, THEMES } from './utils/theme.js'
@@ -245,6 +247,10 @@ export default function App() {
     ? (nodes[selectedNode.node_id] ?? selectedNode)
     : null
 
+  const quarantinedCount = allNodes.filter(n => n.status === 'QUARANTINED').length
+  const suspiciousCount  = allNodes.filter(n => n.status === 'SUSPICIOUS').length
+  const networkState = quarantinedCount > 0 ? 'recovering' : suspiciousCount > 0 ? 'degraded' : 'healthy'
+
   return (
     <MotionConfig reducedMotion={import.meta.env.PROD ? 'user' : 'never'}>
       <div className="app-root">
@@ -254,7 +260,10 @@ export default function App() {
         eventCount={events.length}
         theme={theme}
         onThemeToggle={toggleTheme}
+        networkState={networkState}
       />
+
+      <DetectionToast events={displayEvents} />
 
       <div className="app-layout">
         <Sidebar
@@ -339,8 +348,9 @@ export default function App() {
                 </motion.div>
               )}
               {currentView === 'healing' && (
-                <motion.div key="healing" {...viewTransition} style={{ flex: 1, overflow: 'hidden' }}>
+                <motion.div key="healing" {...viewTransition} style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
                   <PipelineGraph nodes={nodes} onSelectNode={setSelectedNode} />
+                  <SelfHealOverlay nodes={nodes} events={displayEvents} />
                 </motion.div>
               )}
               {currentView === 'events' && (

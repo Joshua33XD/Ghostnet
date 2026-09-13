@@ -74,7 +74,7 @@ function makePacket(payload, senderNode, receiverNode) {
 }
 
 // ── Encapsulation viewer ───────────────────────────────────────────────────
-function EncapsulationView({ stage, pkt }) {
+function EncapsulationView({ stage, pkt, decapLayer = null }) {
   if (!pkt) return null
 
   const layerColors = {
@@ -85,18 +85,22 @@ function EncapsulationView({ stage, pkt }) {
     physical:  '#f59e0b',
   }
 
-  const activeIdx = {
-    [STAGE.APP]:       0,
-    [STAGE.TRANSPORT]: 1,
-    [STAGE.NETWORK]:   2,
-    [STAGE.DATALINK]:  3,
-    [STAGE.PHYSICAL]:  4,
-    [STAGE.ROUTING]:   4,
-    [STAGE.DELIVERY]:  4,
-    [STAGE.DECAP]:     3,
-    [STAGE.RECEIVED]:  0,
-    [STAGE.ACK]:       0,
-  }[stage] ?? -1
+  const activeIdx = (
+    stage === STAGE.DECAP && decapLayer != null
+      ? decapLayer
+      : {
+          [STAGE.APP]:       0,
+          [STAGE.TRANSPORT]: 1,
+          [STAGE.NETWORK]:   2,
+          [STAGE.DATALINK]:  3,
+          [STAGE.PHYSICAL]:  4,
+          [STAGE.ROUTING]:   4,
+          [STAGE.DELIVERY]:  4,
+          [STAGE.DECAP]:     3,
+          [STAGE.RECEIVED]:  0,
+          [STAGE.ACK]:       0,
+        }[stage]
+  ) ?? -1
 
   const encapLayers = [
     { key:'app',       label:'DATA',            content: `"${pkt.payload}"`, color: layerColors.app },
@@ -279,7 +283,9 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
   const [message, setMessage]       = useState('Hello GhostNet')
   const [log, setLog]               = useState([])
   const [showInspector, setShowInspector] = useState(false)
-  const [routerNote, setRouterNote] = useState('')
+  const [routerSteps, setRouterSteps] = useState([])
+  const [routerStep, setRouterStep] = useState(-1)
+  const [decapLayer, setDecapLayer] = useState(null)
   const [ackVisible, setAckVisible] = useState(false)
   const timerRef = useRef([])
 
@@ -302,6 +308,8 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
     clearTimers()
     setShowInspector(false)
     setAckVisible(false)
+    setDecapLayer(null)
+    setRouterStep(-1)
     setLog([])
 
     const pkt = makePacket(message, senderNode, receiverNode)
@@ -325,10 +333,20 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
       await delay(700)
     }
 
+    // ── ROUTER: staged resolution flow ────────────────────────────────
     setStage(STAGE.ROUTING)
-    setRouterNote(`Lookup: ${pkt.dstIp} → Route found → TTL ${pkt.ttl} → ${pkt.ttlAfterRouter}`)
+    setRouterStep(0)
+    setRouterSteps(['INCOMING PACKET', 'ROUTING TABLE LOOKUP', 'DESTINATION FOUND', `FORWARD · TTL ${pkt.ttl}→${pkt.ttlAfterRouter}`])
+    await delay(320)
+    setRouterStep(1)
+    addLog(`[ROUTER] Table lookup for ${pkt.dstIp}`, '#f97316')
+    await delay(360)
+    setRouterStep(2)
+    addLog('[ROUTER] Destination found · route hit', '#f97316')
+    await delay(360)
+    setRouterStep(3)
     addLog(`[ROUTER] Forwarding to ${pkt.dstIp} · TTL ${pkt.ttl}→${pkt.ttlAfterRouter}`, '#f97316')
-    await delay(800)
+    await delay(360)
 
     if (isBlocked || senderBlocked) {
       setStage(STAGE.BLOCKED)
@@ -343,8 +361,19 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
     await delay(600)
 
     setStage(STAGE.DECAP)
-    addLog('[DECAP] Stripping Ethernet → IP → TCP → APP data', '#8b5cf6')
-    await delay(700)
+    setDecapLayer(4)
+    addLog('[DECAP] Stripping layers…', '#8b5cf6')
+    await delay(220)
+    setDecapLayer(3)
+    addLog('[DECAP] Ethernet header removed → IP', '#8b5cf6')
+    await delay(220)
+    setDecapLayer(2)
+    addLog('[DECAP] IP header removed → TCP', '#8b5cf6')
+    await delay(220)
+    setDecapLayer(1)
+    addLog('[DECAP] TCP header removed → application data', '#8b5cf6')
+    await delay(220)
+    setDecapLayer(0)
 
     setStage(STAGE.RECEIVED)
     addLog(`[APP] MESSAGE RECEIVED: "${pkt.payload}"`, '#22c55e')
@@ -498,9 +527,19 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
                   blocked={isBlocked}
                   pulsing={stage === STAGE.ROUTING}
                 />
-                {stage === STAGE.ROUTING && routerNote && (
-                  <div style={{ fontSize:10, color:'#f97316', fontFamily:'var(--font-mono)', background:'rgba(249,115,22,0.1)', border:'1px solid rgba(249,115,22,0.3)', borderRadius:6, padding:'4px 10px', textAlign:'center', maxWidth:160 }}>
-                    {routerNote}
+                {stage === STAGE.ROUTING && routerSteps.length > 0 && (
+                  <div className="router-steps">
+                    {routerSteps.slice(0, routerStep + 1).map((s, i) => (
+                      <motion.div
+                        key={s}
+                        className={`router-step${i === routerStep ? ' active' : ''}`}
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={SPRING.snappy}
+                      >
+                        {i < routerStep ? '✓ ' : '▸ '}{s}
+                      </motion.div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -586,7 +625,7 @@ export default function NetworkCommsView({ nodes, osiSummary, onSelectNode, sele
         <div style={{ display:'flex', flexDirection:'column', gap:'var(--sp-3)', width: compact ? 240 : 300, flexShrink:0, overflow:'hidden' }}>
 
           {/* Encapsulation viewer */}
-          <EncapsulationView stage={stage} pkt={packet} />
+          <EncapsulationView stage={stage} pkt={packet} decapLayer={decapLayer} />
 
           {/* Event log */}
           {!compact && (

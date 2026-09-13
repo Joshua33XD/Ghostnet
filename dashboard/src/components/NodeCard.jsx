@@ -9,6 +9,7 @@ import LifecycleStepper from './LifecycleStepper.jsx'
 import { AreaChart, Area, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { fadeUp, SPRING } from '../motion.js'
+import useSteppedNumber from '../hooks/useSteppedNumber.js'
 
 /* ── Skeleton ─────────────────────────────────────────────── */
 export function NodeCardSkeleton() {
@@ -105,9 +106,11 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
     prevStatus.current = node?.status
   }, [node])
 
+  const trustPct   = node ? Math.round(getTrustScore(node.anomaly_score ?? 0) * 100) : 0
+  const steppedTrust = useSteppedNumber(trustPct)
+
   if (!node) return null
 
-  const trustPct   = Math.round(getTrustScore(node.anomaly_score ?? 0) * 100)
   const trustColor = getTrustColor(node.anomaly_score ?? 0)
   const reason     = getPrimaryReason(node)
   const uptime     = formatElapsed(node.first_seen)
@@ -156,7 +159,13 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
       {/* ── LEVEL 1: Identity + Status ─────────────────────── */}
       <div className="node-card-header">
         <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-          <span className="node-id">{node.node_id}</span>
+          <motion.span
+            layoutId={`node-name-${node.node_id}`}
+            transition={SPRING.gentle}
+            className="node-id"
+          >
+            {node.node_id}
+          </motion.span>
           {node.ip_address && (
             <span style={{ fontSize:'var(--text-xs)', color:'var(--text-muted)', fontFamily:'var(--font-mono)' }}>
               {node.ip_address}
@@ -171,7 +180,18 @@ export default function NodeCard({ node, onRelease, onSelect, history }) {
       {/* ── LEVEL 2: Trust Score (hero metric) ─────────────── */}
       <div style={{ display:'flex', alignItems:'flex-end', gap:8, marginBottom:8 }}>
         <span className="node-trust-score" style={{ color: trustColor }}>
-          {trustPct}
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span
+              key={steppedTrust}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              style={{ display: 'inline-block', fontVariantNumeric: 'tabular-nums' }}
+            >
+              {steppedTrust}
+            </motion.span>
+          </AnimatePresence>
         </span>
         <div style={{ paddingBottom:4 }}>
           <div className="node-trust-label">/ 100  TRUST</div>

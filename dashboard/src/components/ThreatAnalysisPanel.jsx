@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { getTrustScore } from '../utils.js'
 import { SPRING, stagger, fadeUp } from '../motion.js'
+import useSteppedNumber from '../hooks/useSteppedNumber.js'
 
 function TrustTrendChart({ scoreHistory }) {
   const nodeIds = Object.keys(scoreHistory).slice(0, 5)
@@ -91,8 +92,10 @@ export function MLGauge({ nodes }) {
     ? list.reduce((s, n) => s + (n.anomaly_score ?? 0), 0) / list.length
     : 0
   const trust = Math.round((1 - avg) * 100)
+  const displayTrust = useSteppedNumber(trust)
   const r = 52
   const color = trust >= 75 ? 'var(--status-healthy)' : trust >= 50 ? 'var(--status-warn)' : 'var(--status-danger)'
+  const trustColorClass = trust >= 75 ? 'healthy' : trust >= 50 ? 'warn' : 'danger'
   return (
     <motion.div
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
@@ -114,10 +117,12 @@ export function MLGauge({ nodes }) {
         <text x={65} y={60} textAnchor="middle" fill="var(--text-primary)"
           fontSize={22} fontWeight="700" fontFamily="var(--font-mono)">
           <motion.tspan
+            key={displayTrust}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >{trust}%</motion.tspan>
+            transition={{ duration: 0.25 }}
+            className={`gauge-trust-text ${trustColorClass}`}
+          >{displayTrust}%</motion.tspan>
         </text>
         <text x={65} y={76} textAnchor="middle" fill="var(--text-muted)"
           fontSize={9}>Anomaly Score</text>

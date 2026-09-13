@@ -1,7 +1,48 @@
 // RightPanel — Connected Devices + Quick Actions + Device Details
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Shield, Route, FileText, Zap } from 'lucide-react'
 import { getTrustScore, getTrustColor, formatElapsed, formatRate } from '../utils.js'
+
+// ── Self-drawing mini trend for live sensors ───────────────
+function useRolling(current, max = 30) {
+  const ref = useRef([])
+  useEffect(() => {
+    if (current == null) return
+    ref.current = [...ref.current, current].slice(-max)
+  }, [current, max])
+  return ref.current
+}
+
+function MiniTrend({ points, color, width = 90, height = 26 }) {
+  if (points.length < 2) {
+    return <div style={{ width, height, opacity: 0.4, fontSize: 9, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>…</div>
+  }
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const span = max - min || 1
+  const stepX = width / (points.length - 1)
+  const coords = points.map((p, i) => [
+    i * stepX,
+    height - 2 - ((p - min) / span) * (height - 6),
+  ])
+  const line = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  return (
+    <svg width={width} height={height} style={{ flexShrink: 0 }}>
+      <path d={`${line} L${width},${height} L0,${height} Z`} fill={`${color}22`} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function LDRBrightness({ lux, color = '#eab308' }) {
+  const b = Math.max(0.15, Math.min(1, (lux ?? 0) / 600))
+  return (
+    <svg width={20} height={20} style={{ flexShrink: 0 }}>
+      <circle cx={10} cy={10} r={8} fill={color} fillOpacity={b} opacity={0.9} />
+      <circle cx={10} cy={10} r={3.4} fill="var(--surface)" fillOpacity={0.55} />
+    </svg>
+  )
+}
 
 function trustClass(anomaly) {
   const t = getTrustScore(anomaly ?? 0)
@@ -30,6 +71,8 @@ function DeviceItem({ node, selected, onClick }) {
 function DeviceDetail({ node, onRelease }) {
   const [tab, setTab] = useState('overview')
   const [confirming, setConfirming] = useState(false)
+  const tempHist = useRolling(node?.temperature)
+  const humHist  = useRolling(node?.humidity)
   if (!node) return (
     <div className="glass-empty-state" style={{ padding:24 }}>
       <Shield size={28} style={{ opacity:0.2 }} />
@@ -63,6 +106,7 @@ function DeviceDetail({ node, onRelease }) {
           <span style={{ fontSize:'var(--text-sm)', fontWeight:700, fontFamily:'var(--font-mono)', color:'var(--text-primary)', flex:1 }}>
             {node.node_id}
           </span>
+          <span className="health-dot" />
           <span className={`status-pill ${node.status}`}>{node.status}</span>
         </div>
         {/* Trust bar */}
@@ -101,13 +145,49 @@ function DeviceDetail({ node, onRelease }) {
         {tab === 'sensors' && (
           sensors.length > 0 ? (
             <div>
-              {sensors.map(s => (
-                <div key={s.label} className="sensor-row">
-                  <span className="sensor-icon">{s.icon}</span>
-                  <span className="sensor-label">{s.label}</span>
-                  <span className="sensor-value">{s.value}</span>
-                </div>
-              ))}
+              {sensors.map(s => {
+                if (s.label === 'Temperature') {
+                  return (
+                    <div key={s.label} className="sensor-row">
+                      <span className="sensor-icon">{s.icon}</span>
+                      <span className="sensor-label">{s.label}</span>
+                      <MiniTrend points={tempHist} color="#f97316" />
+                      <span className="sensor-value">{s.value}</span>
+                    </div>
+                  )
+                }
+                if (s.label === 'Humidity') {
+                  return (
+                    <div key={s.label} className="sensor-row">
+                      <span className="sensor-icon">{s.icon}</span>
+                      <span className="sensor-label">{s.label}</span>
+                      <MiniTrend points={humHist} color="#38bdf8" />
+                      <span className="sensor-value">{s.value}</span>
+                    </div>
+                  )
+                }
+                if (s.label === 'LDR (Light)') {
+                  return (
+                    <div key={s.label} className="sensor-row">
+                      <span className="sensor-icon">{s.icon}</span>
+                      <LDRBrightness lux={node.ldr} />
+                      <span className="sensor-label">{s.label}</span>
+                      <span className="sensor-value">{s.value}</span>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={s.label} className="sensor-row">
+                    <span className="sensor-icon">{s.icon}</span>
+                    <span className="sensor-label">{s.label}</span>
+                    <span className="sensor-value">{s.value}</span>
+                  </div>
+                )
+              })}
+              <div className="sensor-health">
+                <span className="health-dot" />
+                Device health · monitoring
+              </div>
             </div>
           ) : (
             <div style={{ color:'var(--text-muted)', fontSize:'var(--text-xs)', textAlign:'center', paddingTop:16 }}>No sensor data</div>

@@ -90,7 +90,13 @@ export default function NodeDetailDrawer({ node, history, events, onClose, onRel
         {/* ── Header ─────────────────────────────────────── */}
         <div className="drawer-header">
           <span style={{ fontSize: 15 }}>{getStatusIcon(node.status)}</span>
-          <span className="drawer-node-id">{node.node_id}</span>
+          <motion.span
+            layoutId={`node-name-${node.node_id}`}
+            transition={SPRING.gentle}
+            className="drawer-node-id"
+          >
+            {node.node_id}
+          </motion.span>
           <span className={`node-status-pill ${node.status}`}>{node.status}</span>
           <button className="drawer-close" onClick={onClose} aria-label="Close drawer">✕</button>
         </div>

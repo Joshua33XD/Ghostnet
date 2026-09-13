@@ -31,10 +31,19 @@ export default function NetworkMapView({ nodes, onSelectNode, selectedNodeId }) 
   const [zoom, setZoom] = useState(1)
   const simRef = useRef(null)
   const selectRef = useRef(onSelectNode)
-
-  useEffect(() => { selectRef.current = onSelectNode })
+  const selectedIdRef = useRef(selectedNodeId)
+  const simNodesRef = useRef(null)
+  const simLinksRef = useRef(null)
+  const focusRef = useRef(null)
+  const focusTimersRef = useRef([])
 
   const list = Object.values(nodes)
+
+  useEffect(() => {
+    selectRef.current = onSelectNode
+    selectedIdRef.current = selectedNodeId
+  }, [onSelectNode, selectedNodeId])
+
   // Rebuild the simulation only when the node set or statuses actually change
   // (a fresh-array list would otherwise restart the force sim on every live update).
   const simKey = list.map(n => `${n.node_id}:${n.status}`).join('|')
@@ -69,7 +78,7 @@ export default function NetworkMapView({ nodes, onSelectNode, selectedNodeId }) 
       }
     })
 
-    return { nodesD3, linksD3 }
+    return { nodesD3, linksD3, key: simKey }
   }, [simKey])
 
   useEffect(() => {
@@ -167,8 +176,8 @@ export default function NetworkMapView({ nodes, onSelectNode, selectedNodeId }) 
       g.append('rect')
         .attr('x', -36).attr('y', -20).attr('width', 72).attr('height', 42)
         .attr('rx', 7).attr('fill', 'var(--surface-raised)')
-        .attr('stroke', d.node.node_id === selectedNodeId ? 'var(--accent)' : col)
-        .attr('stroke-width', d.node.node_id === selectedNodeId ? 2 : 1)
+        .attr('stroke', d.node.node_id === selectedIdRef.current ? 'var(--accent)' : col)
+        .attr('stroke-width', d.node.node_id === selectedIdRef.current ? 2 : 1)
         .attr('opacity', d.node.status === 'OFFLINE' ? 0.5 : 1)
         .attr('class', 'map-node-box')
 
@@ -237,6 +246,8 @@ export default function NetworkMapView({ nodes, onSelectNode, selectedNodeId }) 
     })
 
     simRef.current = simulation
+    simNodesRef.current = simNodes
+    simLinksRef.current = simLinks
 
     // ── Traveling packets ──────────────────────────────────────────────────
     // A few glowing dots that move source→target along data links.
@@ -264,15 +275,32 @@ export default function NetworkMapView({ nodes, onSelectNode, selectedNodeId }) 
       }))
     }
 
-    // ── Tick → position nodes + links ─────────────────────────────────────
+    // ── Tick → position nodes + links (focus-aware) ────────────────
     simulation.on('tick', () => {
+      const focused = focusRef.current
       cloud.attr('transform', `translate(${(simNodes[0]?.x ?? cx) - 30}, ${(simNodes[0]?.y ?? cy) - 20})`)
       linkSel
         .attr('x1', d => d.source.x)
         .attr('y1', d => d.source.y)
         .attr('x2', d => d.target.x)
         .attr('y2', d => d.target.y)
-      nodeSel.attr('transform', d => `translate(${d.x}, ${d.y})`)
+        .attr('opacity', d => {
+          if (!focused) return d.target?.node?.status === 'OFFLINE' ? 0.3 : 0.7
+          const touches = d.target?.node?.node_id === focused || d.source?.node?.node_id === focused
+          return touches ? 1 : 0.22
+        })
+        .attr('stroke-width', d => {
+          if (!focused) return d.kind === 'quarantine' ? 2 : 1.5
+          const touches = d.target?.node?.node_id === focused || d.source?.node?.node_id === focused
+          return touches ? 2.6 : (d.kind === 'quarantine' ? 2 : 1.2)
+        })
+      nodeSel
+        .attr('transform', d => {
+          const isFocused = focused && d.node?.node_id === focused
+          const s = isFocused ? 1.04 : 1
+          return `translate(${d.x}, ${d.y}) scale(${s})`
+        })
+        .attr('opacity', d => (focused && d.node && d.node.node_id !== focused) ? 0.4 : 1)
     })
 
     // ── Resize handling ─────────────────────────────────────────────────────
@@ -299,10 +327,81 @@ export default function NetworkMapView({ nodes, onSelectNode, selectedNodeId }) 
     return () => {
       simulation.stop()
       packetTimer.forEach(t => t.stop())
+      focusTimersRef.current.forEach(t => t.stop())
+      focusTimersRef.current = []
       if (ro) ro.disconnect()
       else window.removeEventListener('resize', onResize)
     }
-  }, [graph, selectedNodeId])
+  }, [graph])
+
+  // ── Focus mode: dim others, one packet travels to the target, pulse ──
+  useEffect(() => {
+    focusRef.current = selectedNodeId ?? null
+    const sim = simRef.current
+    if (sim) sim.alpha(0.3).restart()
+
+    const svg = svgRef.current
+    const simNodes = simNodesRef.current
+    const simLinks = simLinksRef.current
+    if (!svg || !selectedNodeId || !simNodes || !simLinks) return
+
+    const prefersReducedLocal = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReducedLocal) return
+
+    const target = simNodes.find(n => n.node?.node_id === selectedNodeId)
+    const link = simLinks.find(l => {
+      const t = typeof l.target === 'number' ? simNodes[l.target] : l.target
+      return t?.node?.node_id === selectedNodeId
+    })
+    let src = link && (typeof link.source === 'number' ? simNodes[link.source] : link.source)
+    if (!target || !link || !src) {
+      // Also accept internet root as source
+      if (target && simNodes[0]) src = simNodes[0]
+      else return
+    }
+
+    const sel = d3.select(svg)
+    const dot = sel.append('circle')
+      .attr('r', 3)
+      .attr('fill', 'var(--status-healthy)')
+      .style('pointer-events', 'none')
+    const pulse = sel.append('circle')
+      .attr('r', 5)
+      .attr('fill', 'none')
+      .attr('stroke', resolveColor(target.node))
+      .attr('stroke-width', 1.5)
+      .style('pointer-events', 'none')
+      .attr('opacity', 0)
+
+    let progress = 0
+    const dur = 950
+    let hasPulsed = false
+    const timer = d3.timer(elapsed => {
+      if (!src.x || !target.x) return
+      progress = Math.min(1, elapsed / dur)
+      const ease = 1 - Math.pow(1 - progress, 3)
+      const ix = src.x + (target.x - src.x) * ease
+      const iy = src.y + (target.y - src.y) * ease
+      dot.attr('cx', ix).attr('cy', iy)
+      if (progress >= 1 && !hasPulsed) {
+        hasPulsed = true
+        pulse.attr('opacity', 0.9)
+          .transition().duration(600)
+          .attr('r', 18)
+          .attr('opacity', 0)
+          .on('end', () => pulse.remove())
+        dot.transition().duration(250).attr('opacity', 0).on('end', () => dot.remove())
+        timer.stop()
+      }
+    })
+    focusTimersRef.current.push(timer)
+    return () => {
+      focusTimersRef.current = focusTimersRef.current.filter(t => t !== timer)
+      timer.stop()
+      dot.remove()
+      pulse.remove()
+    }
+  }, [selectedNodeId])
 
   if (list.length === 0) {
     return (

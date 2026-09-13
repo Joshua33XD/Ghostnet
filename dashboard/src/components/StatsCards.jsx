@@ -28,7 +28,23 @@ function AnimatedNumber({ value, duration = 0.8 }) {
     requestAnimationFrame(tick)
   }, [value, inView, duration])
 
-  return <span ref={ref}>{display}</span>
+  return (
+    <span ref={ref}>
+      {value > 0 ? (
+        <motion.span
+          key={value}
+          initial={{ opacity: 0.35, scale: value === display ? 1 : 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={SPRING.snappy}
+          style={{ display: 'inline-block', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {display}
+        </motion.span>
+      ) : (
+        display
+      )}
+    </span>
+  )
 }
 
 export default function StatsCards({ nodes, activeFilter, onFilter }) {

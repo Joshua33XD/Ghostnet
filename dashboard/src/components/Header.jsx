@@ -1,6 +1,7 @@
-// Header v5 — search bar + system status + theme toggle
+// Header v7 — search bar + network heartbeat + system status + theme toggle
 import { useState, useEffect } from 'react'
 import { Shield, Search, Bell, Sun, Moon, Palette, User } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { THEME_LABELS } from '../utils/theme.js'
 
 const THEME_ICONS = {
@@ -9,7 +10,34 @@ const THEME_ICONS = {
   colorful: Palette,
 }
 
-export default function Header({ wsStatus, nodeCount, eventCount, theme, onThemeToggle }) {
+const HEARTBEAT = {
+  healthy:   { label: 'Network Healthy',  dot: 'var(--status-healthy)',  css: 'healthy' },
+  degraded:  { label: 'Network Degraded', dot: 'var(--status-warn)',     css: 'degraded' },
+  recovering:{ label: 'Network Recovering', dot: 'var(--accent)',        css: 'recovering' },
+}
+
+function NetworkHeartbeat({ state }) {
+  const meta = HEARTBEAT[state] ?? HEARTBEAT.healthy
+  return (
+    <div className={`network-heartbeat network-heartbeat--${meta.css}`}>
+      <span className="net-dot" style={{ background: meta.dot }} />
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={state}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.18 }}
+          style={{ fontSize: 'var(--text-xs)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}
+        >
+          {meta.label}
+        </motion.span>
+      </AnimatePresence>
+    </div>
+  )
+}
+
+export default function Header({ wsStatus, nodeCount, eventCount, theme, onThemeToggle, networkState = 'healthy' }) {
   const [clock, setClock] = useState('')
   const [sub, setSub] = useState('')
 
@@ -47,6 +75,8 @@ export default function Header({ wsStatus, nodeCount, eventCount, theme, onTheme
       </div>
 
       <div className="header-right">
+        {isConnected && <NetworkHeartbeat state={networkState} />}
+
         {isConnected ? (
           <div className="system-status-pill">
             <span className="status-dot" />

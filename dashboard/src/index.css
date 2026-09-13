@@ -1059,85 +1059,55 @@ html.theme-clean .stat-card{
 .sim-btn.attack{border-color:var(--status-danger-border);color:var(--status-danger);}
 
 /* ═══════════════════════════════════════════════════════
-   GHOSTNET v6 — VISUAL RESTYLE
-   Ambient backdrop, layered surfaces, HUD polish.
-   Theme-aware; respects prefers-reduced-motion.
+   GHOSTNET v7 — CALM SURFACES
+   Quiet canvas. Hairlines pick out depth; colour carries
+   meaning only (green/amber/red/blue/violet for lifecycle).
+   No grids, no drifting orbs, no constant glow.
    ═══════════════════════════════════════════════════════ */
 
-/* Stacking context so the ambient layers stay behind content */
+/* Stacking context + layering so content sits above the wash */
 .app-root{isolation:isolate;}
-.app-header,.app-layout{position:relative;z-index:1;}
+.app-header{position:relative;z-index:1;}
 
-/* ── Ambient backdrop: faint grid + drifting glow orbs ── */
+/* ── Quiet canvas wash (static, single tone, no motion) ── */
 .app-root::before{
   content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
   background:
-    linear-gradient(rgba(59,130,246,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(59,130,246,0.05) 1px, transparent 1px);
-  background-size:44px 44px;
-  -webkit-mask-image:radial-gradient(ellipse at 50% 0%, #000 35%, transparent 78%);
-  mask-image:radial-gradient(ellipse at 50% 0%, #000 35%, transparent 78%);
-}
-.app-root::after{
-  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
-  background:
-    radial-gradient(620px 440px at 10% -6%, rgba(59,130,246,0.16), transparent 62%),
-    radial-gradient(540px 400px at 96% 8%,  rgba(139,92,246,0.13), transparent 60%),
-    radial-gradient(720px 520px at 72% 108%, rgba(34,197,94,0.09), transparent 62%),
-    radial-gradient(480px 340px at 40% 55%,  rgba(34,211,238,0.06), transparent 60%);
-  animation:ghost-drift 18s ease-in-out infinite alternate;
-}
-@keyframes ghost-drift{
-  from{opacity:0.7;transform:translate3d(0,0,0) scale(1)}
-  to  {opacity:1;  transform:translate3d(8px,-10px,0) scale(1.05)}
-}
-html.theme-clean .app-root::before{background:none;}
-html.theme-clean .app-root::after{opacity:0.45;}
-html.theme-colorful .app-root::before{background:none;}
-html.theme-colorful .app-root::after{
-  background:
-    radial-gradient(620px 440px at 10% -6%, rgba(255,255,255,0.4), transparent 62%),
-    radial-gradient(540px 400px at 96% 8%,  rgba(255,255,255,0.32), transparent 60%),
-    radial-gradient(720px 520px at 72% 108%, rgba(255,255,255,0.2), transparent 62%);
-  opacity:0.55;
+    radial-gradient(720px 420px at 50% -8%, var(--accent-soft), transparent 65%);
+  opacity:0.5;
 }
 
-/* ── Header: glass bar + gradient hairline ───────────── */
+/* ── Header: clean bar + gradient hairline ───────────── */
 .app-header{
   background:linear-gradient(180deg, var(--surface-raised), var(--surface));
-  box-shadow:0 1px 0 rgba(255,255,255,0.03) inset;
 }
 .app-header::after{
   content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
   background:linear-gradient(90deg, transparent, var(--accent-border), transparent);
   opacity:0.7;
 }
-.theme-toggle-btn,.hud-icon-btn,.avatar-btn{transition:all var(--dur-fast),border-color var(--dur-fast),box-shadow var(--dur-fast);}
-.theme-toggle-btn:hover,.hud-icon-btn:hover,.avatar-btn:hover{
-  box-shadow:0 0 0 1px var(--accent-border),0 4px 14px -6px var(--accent-soft);
+.theme-toggle-btn,.hud-icon-btn,.avatar-btn{
+  transition:background var(--dur-fast),border-color var(--dur-fast);
 }
 
-/* ── Sidebar: brand glow + active sheen ──────────────── */
-.sidebar-logo-icon{
-  background:linear-gradient(135deg, var(--accent-soft), transparent);
-  box-shadow:0 0 16px -4px var(--accent-soft);
-}
+/* ── Sidebar: quiet active pill ───────────────────────── */
+.sidebar-logo-icon{background:linear-gradient(135deg, var(--accent-soft), transparent);}
 .sidebar-nav{animation:none;}
+.sidebar-item{transition:color var(--dur-fast),background var(--dur-fast);}
 .sidebar-item.active{background:linear-gradient(90deg, var(--accent-bg), transparent);}
 .sidebar-active-indicator{
   border-radius:6px;margin:3px 6px;
   background:linear-gradient(90deg, var(--accent-bg), transparent);
-  box-shadow:inset 2px 0 0 var(--accent),0 0 18px -6px var(--accent-soft);
+  box-shadow:inset 2px 0 0 var(--accent);
 }
-.sidebar-item{transition:color var(--dur-fast),background var(--dur-fast);}
 
-/* ── Surfaces: layered gradient + hairline + glow ────── */
+/* ── Surfaces: layered gradient + hairline ───────────── */
 .panel,.stat-card,.node-card,.glass-section-box,
 .comms-topology,.comms-controls,.packet-inspector,
 .pipeline-header,.pipeline-flow-track,.pipeline-node-card,
 .node-matrix-panel,.drawer,.skeleton-card{
   background-image:linear-gradient(180deg,
-    color-mix(in srgb, var(--surface) 88%, #ffffff 12%), var(--surface) 130px);
+    color-mix(in srgb, var(--surface) 90%, #ffffff 10%), var(--surface) 130px);
 }
 .panel,.stat-card,.node-card,.glass-section-box,
 .comms-topology,.comms-controls,.packet-inspector,
@@ -1149,65 +1119,114 @@ html.theme-colorful .app-root::after{
   background:linear-gradient(90deg, transparent, var(--accent-border), transparent);
   opacity:0.5;pointer-events:none;
 }
-.panel,.stat-card{
-  box-shadow:0 1px 0 rgba(255,255,255,0.03) inset,0 10px 30px -22px rgba(0,0,0,0.6);
+.panel{
+  box-shadow:0 1px 0 rgba(255,255,255,0.03) inset,0 12px 32px -28px rgba(0,0,0,0.5);
 }
-.stat-card:hover,.node-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 12px 32px -18px var(--accent-soft);}
-html.theme-clean .stat-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 6px 18px -10px rgba(37,99,235,0.25);}
-html.theme-clean .node-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 6px 18px -10px rgba(37,99,235,0.25);}
-html.theme-colorful .stat-card:hover,html.theme-colorful .node-card:hover{box-shadow:0 0 0 1px var(--accent-border),0 10px 30px -12px var(--accent-soft);}
+.stat-card:hover,.node-card:hover{
+  box-shadow:0 1px 0 rgba(255,255,255,0.04) inset,0 14px 34px -26px rgba(0,0,0,0.55);
+}
 
 .panel-header{border-bottom-color:var(--border-subtle);}
 .panel-title{letter-spacing:0.01em;}
 .panel-title-icon{
   background:linear-gradient(135deg, var(--purple-bg), var(--accent-bg));
   border:1px solid var(--accent-border);
-  box-shadow:0 0 12px -4px var(--accent-soft);
 }
 
-/* Stat card icon glow */
-.stat-card-icon{position:relative;}
-.stat-card-icon::after{
-  content:'';position:absolute;inset:-6px;border-radius:12px;z-index:-1;
-  background:radial-gradient(circle, var(--accent-soft), transparent 70%);
-  opacity:0;transition:opacity var(--dur-mid);
-}
-.stat-card:hover .stat-card-icon::after{opacity:1;}
-
-/* ── Node card trust score glow ───────────────────────── */
-.node-trust-score{text-shadow:0 0 18px color-mix(in srgb, currentColor 45%, transparent);}
-
-/* ── Pills, tags, badges ─────────────────────────────── */
-.system-status-pill,.status-pill,.trust-badge,.anomaly-action,.event-tag{
-  box-shadow:0 2px 8px -4px rgba(0,0,0,0.4);
+/* ── Status pills morph colors smoothly (badge morph) ── */
+.node-status-pill,.status-pill,.trust-badge{
+  transition:background var(--dur-mid),border-color var(--dur-mid),color var(--dur-mid);
 }
 
-/* ── Empty states: breathing halo ────────────────────── */
-.glass-empty-state,.empty-state{position:relative;}
-.glass-empty-state svg,.empty-state .empty-icon{
-  animation:empty-breathe 3s ease-in-out infinite;
-  opacity:0.45;
+/* ── Network heartbeat pill ──────────────────────────── */
+.network-heartbeat{
+  display:flex;align-items:center;gap:7px;
+  padding:'6px 12px';border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--surface-raised);
+  overflow:hidden;
 }
-@keyframes empty-breathe{
-  0%,100%{opacity:0.25;transform:scale(0.95)}
-  50%    {opacity:0.55;transform:scale(1.05)}
+.network-heartbeat--healthy{border-color:var(--status-healthy-border);}
+.network-heartbeat--degraded{border-color:var(--status-warn-border);}
+.network-heartbeat--recovering{border-color:var(--accent-border);}
+.net-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:net-pulse 2.4s ease-out infinite;}
+.network-heartbeat--degraded .net-dot{animation-duration:1.4s;}
+.network-heartbeat--recovering .net-dot{animation:net-recover-pulse 1.6s ease-in-out infinite;}
+@keyframes net-pulse{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, currentColor 35%, transparent);}
+  70%{box-shadow:0 0 0 6px transparent;}
+  100%{box-shadow:0 0 0 0 transparent;}
+}
+@keyframes net-recover-pulse{
+  0%,100%{transform:scale(1);}
+  50%{transform:scale(1.35);}
 }
 
-/* ── Primary action affordance ───────────────────────── */
-.send-data-btn,.release-btn,.confirm-yes-btn,.settings-btn.primary{
-  box-shadow:0 4px 16px -8px var(--accent-soft);
+/* ── Detection toast ─────────────────────────────────── */
+.detection-toast{
+  display:flex;align-items:flex-start;gap:10px;
+  min-width:280px;max-width:360px;
+  padding:12px 14px;border-radius:12px;
+  background:var(--surface-overlay);border:1px solid var(--border);
+  box-shadow:0 18px 40px -24px rgba(0,0,0,0.55);
+  border-left:3px solid var(--toast-color,#f59e0b);
+  backdrop-filter:blur(8px);
 }
-.send-data-btn:hover{box-shadow:0 6px 20px -8px var(--accent-soft);transform:translateY(-1px);}
+.detection-toast-icon{
+  width:26px;height:26px;border-radius:8px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb, var(--toast-color,#f59e0b) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--toast-color,#f59e0b) 35%, transparent);
+}
+.detection-toast-title{font-size:var(--text-sm);font-weight:700;color:var(--text-primary);}
+.detection-toast-msg{font-size:var(--text-xs);color:var(--text-secondary);line-height:1.4;}
+.detection-toast-time{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);}
+.detection-toast-tag{
+  margin-left:auto;padding:2px 8px;border-radius:99px;flex-shrink:0;
+  font-size:9px;font-family:var(--font-mono);font-weight:700;
+  background:var(--surface-raised);border:1px solid var(--border);
+  color:var(--text-muted);
+}
 
-/* ── ML gauge glass ──────────────────────────────────── */
+/* ── Empty states: calm, static, readable ────────────── */
+.glass-empty-state svg,.empty-state .empty-icon{opacity:0.4;}
+
+/* ── ML gauge glass / drawer / map polish ────────────── */
 .ml-gauge-label{letter-spacing:0.02em;}
-
-/* ── Drawer & map polish ─────────────────────────────── */
-.drawer{box-shadow:-18px 0 50px -24px rgba(0,0,0,0.6);}
+.drawer{box-shadow:-18px 0 50px -28px rgba(0,0,0,0.55);}
 .map-cloud text{letter-spacing:0.06em;}
 
-/* ── Reduced motion: freeze ambient effects ──────────── */
-@media (prefers-reduced-motion:reduce){
-  .app-root::after{animation:none;opacity:1;}
-  .glass-empty-state svg,.empty-state .empty-icon{animation:none;opacity:0.4;}
+/* -- Self-healing overlay ------------------------------ */
+.selfheal-overlay{position:absolute;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--surface-overlay) 45%, transparent);backdrop-filter:blur(3px);}
+@media (prefers-reduced-motion:reduce){.selfheal-overlay{backdrop-filter:none;}}
+.selfheal-card{
+  width:min(440px,calc(100vw - 48px));padding:26px 30px 30px;border-radius:18px;
+  background:var(--surface-raised);border:1px solid var(--border);
+  box-shadow:0 30px 70px -30px rgba(0,0,0,0.6);
 }
+.selfheal-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.selfheal-qcount{padding:3px 9px;border-radius:99px;font-size:9px;font-family:var(--font-mono);font-weight:700;color:var(--status-danger);border:1px solid var(--status-danger-border);background:var(--status-danger-bg);}
+.selfheal-dots{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;}
+.selfheal-dot{width:9px;height:9px;border-radius:50%;}
+.selfheal-dot-label{margin-left:10px;font-size:9px;font-family:var(--font-mono);letter-spacing:0.12em;color:#a78bfa;}
+
+/* -- Gauge trust text colour by state ------------------ */
+.gauge-trust-text{fill:var(--status-healthy);font-variant-numeric:tabular-nums;}
+.gauge-trust-text.warn{fill:var(--status-warn);}
+.gauge-trust-text.danger{fill:var(--status-danger);}
+
+/* -- Router staged resolution chips -------------------- */
+.router-steps{display:flex;flex-direction:column;gap:3px;margin-top:6px;align-items:center;}
+.router-step{
+  font-size:9px;font-family:var(--font-mono);letter-spacing:0.08em;padding:3px 10px;border-radius:6px;
+  color:var(--text-muted);border:1px solid var(--border);background:var(--surface-raised);white-space:nowrap;
+}
+.router-step.active{color:#f97316;border-color:rgba(249,115,22,0.45);background:rgba(249,115,22,0.1);}
+.router-step:not(.active){color:var(--status-healthy);border-color:var(--status-healthy-border);background:var(--status-healthy-bg);}
+
+/* -- Sensor widgets ------------------------------------ */
+.sensor-row{align-items:center;gap:8px;}
+.sensor-health{display:flex;align-items:center;gap:7px;margin-top:10px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);}
+.health-dot{width:6px;height:6px;border-radius:50%;background:var(--status-healthy);animation:health-pulse 3.2s ease-in-out infinite;flex-shrink:0;}
+@keyframes health-pulse{0%,100%{opacity:0.45}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.health-dot{animation:none;opacity:1;}}
