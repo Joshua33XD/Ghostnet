@@ -1,0 +1,52 @@
+# =============================================================================
+# GhostNet Suricata Configuration Override
+# Optimized for IoT Network IDS & EVE Logging
+# =============================================================================
+%YAML 1.1
+---
+
+vars:
+  address-groups:
+    HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+  port-groups:
+    HTTP_PORTS: "80"
+    MQTT_PORTS: "1883"
+    COAP_PORTS: "5683"
+
+default-log-dir: ./log
+
+# ── EVE Output Configuration ───────────────────────────────────────────────────
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      pcap-file: false
+      community-id: true
+      community-id-seed: 0
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+            tagged-packets: yes
+        - flow
+        - dns:
+            version: 2
+        - http:
+            extended: yes
+        - tls:
+            extended: yes
+
+# ── Rule Configuration ─────────────────────────────────────────────────────────
+default-rule-path: ./rules
+rule-files:
+  - ghostnet_iot.rules
+
+# ── Engine Profile ─────────────────────────────────────────────────────────────
+runmode: single
+classification-file: classification.config
+reference-config-file: reference.config

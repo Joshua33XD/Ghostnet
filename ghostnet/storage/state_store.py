@@ -1,409 +1,488 @@
 # =============================================================================
-# GhostNet — storage/state_store.py  (full threat-expansion edition)
-# Thread-safe in-memory node state registry.
-# Every new field required by the 10 threat detectors is added here.
+# GhostNet — storage/state_store.py (Network-Only IDS Edition)
+# Thread-safe in-memory device registry, flow metrics, and Suricata alerts.
+# Status rule:
+#   Severity 1-2 alert in last N seconds -> QUARANTINED
+#   Severity 3 alert in last N seconds   -> SUSPICIOUS
+#   Otherwise                           -> HEALTHY
 # =============================================================================
 from __future__ import annotations
 
+import collections
+import datetime
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
-from ghostnet import logger
+from ghostnet import config, logger
 
 
-class NodeStatus:
-    HEALTHY    = "HEALTHY"
+class DeviceStatus:
+    HEALTHY = "HEALTHY"
     SUSPICIOUS = "SUSPICIOUS"
     QUARANTINED = "QUARANTINED"
-    OFFLINE    = "OFFLINE"
 
 
 @dataclass
-class NodeState:
-    node_id: str
+class DeviceState:
+    ip: str
+    name: str = ""
+    status: str = DeviceStatus.HEALTHY
+    first_seen: float = field(default_factory=time.time)
+    last_seen: float = field(default_factory=time.time)
 
-    # ── Timestamps ─────────────────────────────────────────────────────────────
-    first_seen:      float = field(default_factory=time.time)
-    last_seen:       float = field(default_factory=time.time)
-    last_heartbeat:  float = field(default_factory=time.time)
-    last_message_ts: Optional[float] = None   # payload-embedded timestamp
+    # Manual quarantine override flag
+    manually_quarantined: bool = False
+    quarantined_at: Optional[float] = None
+    recovered_at: Optional[float] = None
 
-    # ── Message statistics ─────────────────────────────────────────────────────
-    message_count:      int        = 0
-    message_timestamps: List[float] = field(default_factory=list)
-    payload_sizes:      List[int]   = field(default_factory=list)
+    # Alert tracking
+    alert_count: int = 0
+    recent_alerts: List[Dict[str, Any]] = field(default_factory=list)  # max 50
+    active_threats: Set[str] = field(default_factory=set)
 
-    # ── EWMA ───────────────────────────────────────────────────────────────────
-    ewma_rate:    float = 0.0
-    ewma_payload: float = 0.0
+    # Flow and Traffic Statistics
+    flow_count: int = 0
+    bytes_in: int = 0
+    bytes_out: int = 0
+    bytes_total: int = 0
+    pkts_in: int = 0
+    pkts_out: int = 0
+    pkts_total: int = 0
 
-    # ── Anomaly / status ───────────────────────────────────────────────────────
-    anomaly_score:          float = 0.0
-    status:                 str   = NodeStatus.HEALTHY
-    quarantine_clean_streak: int  = 0
-    active_threats:         Set[str] = field(default_factory=set)
-    threat_history:         List[dict] = field(default_factory=list)
+    # Rate indicators (bytes/sec, packets/sec)
+    bps: float = 0.0
+    pps: float = 0.0
 
-    # ── Per-threat state ───────────────────────────────────────────────────────
-    # Threat 2 — MQTT abuse
-    seen_topics:   Set[str] = field(default_factory=set)
+    # Rolling window samples for rates: deque of (ts, total_bytes, total_pkts)
+    rate_samples: collections.deque = field(default_factory=lambda: collections.deque(maxlen=20))
+    history_bps: List[Dict[str, Any]] = field(default_factory=list)  # max 60 points
+    history_pps: List[Dict[str, Any]] = field(default_factory=list)  # max 60 points
 
-    # Threat 3 — Replay
-    seen_seq_ids:      Set[int] = field(default_factory=set)
-    duplicate_seq_count: int    = 0
+    def __post_init__(self):
+        if not self.name:
+            friendly = config.DEVICE_NAMES.get(self.ip)
+            if friendly:
+                self.name = friendly
+            else:
+                last_octet = self.ip.split(".")[-1] if "." in self.ip else self.ip
+                self.name = f"Device-{last_octet}"
 
-    # Threat 5 — Resource exhaustion
-    last_cpu_pct:     Optional[float] = None
-    last_ram_pct:     Optional[float] = None
-    last_storage_pct: Optional[float] = None
+    def update_flow(self, is_inbound: bool, bytes_count: int, pkts_count: int, now: Optional[float] = None) -> None:
+        """Updates device traffic metrics and computes rolling Bps/Pps."""
+        if now is None:
+            now = time.time()
+        self.last_seen = now
+        self.flow_count += 1
 
-    # Threat 6 — Crash/restart
-    reboot_timestamps: List[float] = field(default_factory=list)
+        if is_inbound:
+            self.bytes_in += bytes_count
+            self.pkts_in += pkts_count
+        else:
+            self.bytes_out += bytes_count
+            self.pkts_out += pkts_count
 
-    # Threat 7 — Firmware tampering
-    last_firmware_hash:     Optional[str] = None
-    baseline_firmware_hash: Optional[str] = None
+        self.bytes_total = self.bytes_in + self.bytes_out
+        self.pkts_total = self.pkts_in + self.pkts_out
 
-    # Threat 8 — Config tampering
-    last_config_hash:     Optional[str] = None
-    baseline_config_hash: Optional[str] = None
+        # Compute Bps and Pps using rolling rate samples
+        self.rate_samples.append((now, self.bytes_total, self.pkts_total))
+        if len(self.rate_samples) >= 2:
+            oldest_ts, oldest_bytes, oldest_pkts = self.rate_samples[0]
+            dt = now - oldest_ts
+            if dt > 0.1:
+                self.bps = round((self.bytes_total - oldest_bytes) / dt, 1)
+                self.pps = round((self.pkts_total - oldest_pkts) / dt, 1)
 
-    # Threat 9 — Brute-force
-    auth_fail_timestamps: List[float] = field(default_factory=list)
+        # Record history sparkline (sample at most once every 1.5 seconds)
+        ts_ms = int(now * 1000)
+        if not self.history_bps or (now - (self.history_bps[-1]["t"] / 1000.0) >= 1.5):
+            self.history_bps.append({"t": ts_ms, "score": self.bps})
+            self.history_pps.append({"t": ts_ms, "score": self.pps})
+            if len(self.history_bps) > 60:
+                self.history_bps.pop(0)
+            if len(self.history_pps) > 60:
+                self.history_pps.pop(0)
 
-    # ── Meta ───────────────────────────────────────────────────────────────────
-    quarantine_time: Optional[float] = None
-    recovery_time:   Optional[float] = None
-    offline_since:   Optional[float] = None
+    def add_alert(self, alert_event: Dict[str, Any]) -> None:
+        """Adds a normalized Suricata alert to the device's history."""
+        self.last_seen = alert_event.get("timestamp", time.time())
+        self.alert_count += 1
+        self.recent_alerts.append(alert_event)
+        if len(self.recent_alerts) > 50:
+            self.recent_alerts.pop(0)
 
-    # ── Threat-specific recovery clean-streak counters ────────────────────────
-    threat_clean_streaks: Dict[str, int] = field(default_factory=dict)
+        sig = alert_event.get("alert", {}).get("signature")
+        if sig:
+            self.active_threats.add(sig)
 
-    # ── v3: ML anomaly detector results ───────────────────────────────────────
-    ml_score:       float = 0.0
-    ml_anomaly:     bool  = False
-    ml_confidence:  float = 0.0
-    ml_warmup:      bool  = True
-    ml_features:    List[dict] = field(default_factory=list)   # [{name, value}, ...]
-    ml_sample_count: int  = 0
+    def evaluate_status(self, now: float, window_secs: float) -> tuple[str, str, Optional[Dict[str, Any]]]:
+        """
+        Deterministic status rule (no ML):
+        - Any Suricata severity 1-2 alert in the last N seconds -> QUARANTINED
+        - Severity 3 alert in the last N seconds -> SUSPICIOUS
+        - Otherwise -> HEALTHY
+        - Respects manual quarantine override
+        Returns: (old_status, new_status, triggering_alert)
+        """
+        old_status = self.status
+        if self.manually_quarantined:
+            self.status = DeviceStatus.QUARANTINED
+            return old_status, self.status, None
 
-    # ── v3: OSI classification ─────────────────────────────────────────────────
-    osi_layer:       Optional[int] = None
-    osi_layer_name:  str           = "Unknown"
-    attack_category: str           = "None"
-    osi_confidence:  float         = 0.0
-    osi_evidence:    List[str]     = field(default_factory=list)
+        # Filter alerts in active window
+        active_alerts = [
+            a for a in self.recent_alerts
+            if (now - a.get("timestamp", 0)) <= window_secs
+        ]
 
-    # ── v3: Threat fusion ──────────────────────────────────────────────────────
-    fusion_score:       float = 0.0
-    fusion_confidence:  float = 0.0
-    memory_matches:     List[dict] = field(default_factory=list)  # [{incident_id, similarity, ...}]
-
-    # ── RECONFIGURE: alternate communication path set on quarantine ────────────
-    reroute_path: Optional[str] = None
-
-    # Ring-buffer size
-    _RING_SIZE: int = field(default=60, init=False, repr=False)
-
-    def to_dict(self) -> dict:
-        return {
-            "node_id":            self.node_id,
-            "status":             self.status,
-            "anomaly_score":      round(self.anomaly_score, 4),
-            "message_count":      self.message_count,
-            "ewma_rate":          round(self.ewma_rate, 4),
-            "ewma_payload":       round(self.ewma_payload, 2),
-            "last_seen":          self.last_seen,
-            "last_heartbeat":     self.last_heartbeat,
-            "active_threats":     list(self.active_threats),
-            "threat_history":     self.threat_history[-20:],
-            "quarantine_time":    self.quarantine_time,
-            "recovery_time":      self.recovery_time,
-            "offline_since":      self.offline_since,
-            "last_cpu_pct":       self.last_cpu_pct,
-            "last_ram_pct":       self.last_ram_pct,
-            "last_storage_pct":   self.last_storage_pct,
-            "last_firmware_hash": self.last_firmware_hash,
-            "last_config_hash":   self.last_config_hash,
-            "seen_topics_count":  len(self.seen_topics),
-            # ── v3 fields (all optional-safe defaults) ──────────────────────
-            "ml_score":           round(self.ml_score, 4),
-            "ml_anomaly":         self.ml_anomaly,
-            "ml_confidence":      round(self.ml_confidence, 3),
-            "ml_warmup":          self.ml_warmup,
-            "ml_features":        self.ml_features,
-            "ml_sample_count":    self.ml_sample_count,
-            "osi_layer":          self.osi_layer,
-            "osi_layer_name":     self.osi_layer_name,
-            "attack_category":    self.attack_category,
-            "osi_confidence":     round(self.osi_confidence, 3),
-            "osi_evidence":       self.osi_evidence,
-            "fusion_score":       round(self.fusion_score, 4),
-            "fusion_confidence":  round(self.fusion_confidence, 3),
-            "memory_matches":     self.memory_matches,
-            # ── RECONFIGURE — alternate path (None when not quarantined) ——————
-            "reroute_path":       self.reroute_path,
+        # Update active threats set
+        self.active_threats = {
+            a.get("alert", {}).get("signature", "")
+            for a in active_alerts if a.get("alert", {}).get("signature")
         }
 
-    # ── Ring-buffer helpers ────────────────────────────────────────────────────
-    def push_message(self, payload_size: int, topic: str = "") -> None:
-        now = time.time()
-        self.last_seen = now
-        self.message_count += 1
+        # Check for severity 1 or 2
+        sev1_2 = [a for a in active_alerts if a.get("alert", {}).get("severity") in (1, 2)]
+        sev3 = [a for a in active_alerts if a.get("alert", {}).get("severity") == 3]
 
-        self.message_timestamps.append(now)
-        if len(self.message_timestamps) > self._RING_SIZE:
-            self.message_timestamps.pop(0)
+        if sev1_2:
+            self.status = DeviceStatus.QUARANTINED
+            if old_status != DeviceStatus.QUARANTINED:
+                self.quarantined_at = now
+            return old_status, self.status, sev1_2[-1]
+        elif sev3:
+            self.status = DeviceStatus.SUSPICIOUS
+            return old_status, self.status, sev3[-1]
+        else:
+            self.status = DeviceStatus.HEALTHY
+            if old_status in (DeviceStatus.QUARANTINED, DeviceStatus.SUSPICIOUS):
+                self.recovered_at = now
+            return old_status, self.status, None
 
-        self.payload_sizes.append(payload_size)
-        if len(self.payload_sizes) > self._RING_SIZE:
-            self.payload_sizes.pop(0)
+    def to_dict(self) -> Dict[str, Any]:
+        """Clean dictionary representation for /devices endpoints."""
+        return {
+            "ip": self.ip,
+            "name": self.name,
+            "status": self.status,
+            "first_seen": self.first_seen,
+            "last_seen": self.last_seen,
+            "manually_quarantined": self.manually_quarantined,
+            "quarantined_at": self.quarantined_at,
+            "recovered_at": self.recovered_at,
+            "alert_count": self.alert_count,
+            "active_threats": sorted(list(self.active_threats)),
+            "recent_alerts": self.recent_alerts[-20:],
+            "flow_count": self.flow_count,
+            "bytes_in": self.bytes_in,
+            "bytes_out": self.bytes_out,
+            "bytes_total": self.bytes_total,
+            "pkts_in": self.pkts_in,
+            "pkts_out": self.pkts_out,
+            "pkts_total": self.pkts_total,
+            "bps": self.bps,
+            "pps": self.pps,
+            "history_bps": self.history_bps,
+            "history_pps": self.history_pps,
+        }
 
-        if topic:
-            self.seen_topics.add(topic)
-
-    def current_rate(self) -> float:
-        now = time.time()
-        window = [t for t in self.message_timestamps if now - t <= 10.0]
-        if len(window) < 2:
-            return 0.0
-        return len(window) / (window[-1] - window[0] + 1e-9)
-
-    def avg_payload(self) -> float:
-        if not self.payload_sizes:
-            return 0.0
-        return sum(self.payload_sizes) / len(self.payload_sizes)
-
-    def record_seq(self, seq_id: int) -> bool:
-        """Returns True if this seq_id is a duplicate (replay)."""
-        from ghostnet import config as _cfg
-        if seq_id in self.seen_seq_ids:
-            self.duplicate_seq_count += 1
-            return True
-        self.seen_seq_ids.add(seq_id)
-        # Keep window bounded
-        if len(self.seen_seq_ids) > _cfg.REPLAY_SEQ_WINDOW:
-            self.seen_seq_ids.pop()
-        return False
+    def to_node_dict(self) -> Dict[str, Any]:
+        """Maps device onto the legacy /nodes format for 100% backward compatibility."""
+        score = 1.0 if self.status == DeviceStatus.QUARANTINED else (0.5 if self.status == DeviceStatus.SUSPICIOUS else 0.0)
+        return {
+            "node_id": self.ip,
+            "ip": self.ip,
+            "name": self.name,
+            "status": self.status,
+            "anomaly_score": score,
+            "active_threats": sorted(list(self.active_threats)),
+            "threat_history": [
+                {
+                    "threat": a.get("alert", {}).get("signature", "Alert"),
+                    "severity": a.get("alert", {}).get("severity", 3),
+                    "timestamp": a.get("timestamp", 0),
+                    "description": a.get("alert", {}).get("category", "IDS Alert"),
+                }
+                for a in self.recent_alerts[-30:]
+            ],
+            "last_seen": self.last_seen,
+            "first_seen": self.first_seen,
+            "last_heartbeat": self.last_seen,
+            "message_count": self.flow_count + self.alert_count,
+            "ewma_rate": self.pps,
+            "ewma_payload": round(self.bps / max(self.pps, 1.0), 1),
+            "bps": self.bps,
+            "pps": self.pps,
+            "bytes_total": self.bytes_total,
+            "pkts_total": self.pkts_total,
+            "recent_alerts": self.recent_alerts[-10:],
+            "quarantine_time": self.quarantined_at,
+            "recovery_time": self.recovered_at,
+        }
 
 
 class StateStore:
-    def __init__(self) -> None:
-        self._lock  = threading.RLock()
-        self._nodes: Dict[str, NodeState] = {}
+    """Thread-safe state store for devices, live EVE alerts, and network statistics."""
 
-    # ── Node lifecycle ─────────────────────────────────────────────────────────
-    def get_or_create(self, node_id: str) -> NodeState:
+    def __init__(self, alert_window_secs: Optional[float] = None) -> None:
+        self._lock = threading.RLock()
+        self._devices: Dict[str, DeviceState] = {}
+        self._all_alerts: List[Dict[str, Any]] = []
+        self._ALERT_CAPACITY = 2000
+        self.alert_window_secs = alert_window_secs or config.ALERT_WINDOW_SECS
+        self._minute_counts: collections.defaultdict[str, int] = collections.defaultdict(int)
+        self._signature_counts: collections.defaultdict[str, Dict[str, Any]] = collections.defaultdict(
+            lambda: {"count": 0, "severity": 3, "signature": ""}
+        )
+
+    # ── Device Management ───────────────────────────────────────────────────────
+    def get_or_create_device(self, ip: str) -> DeviceState:
         with self._lock:
-            if node_id not in self._nodes:
-                logger.info(f"New node registered.", node_id=node_id)
-                self._nodes[node_id] = NodeState(node_id=node_id)
-            return self._nodes[node_id]
+            if ip not in self._devices:
+                self._devices[ip] = DeviceState(ip=ip)
+            return self._devices[ip]
 
-    def get(self, node_id: str) -> Optional[NodeState]:
+    def get_device(self, ip: str) -> Optional[DeviceState]:
         with self._lock:
-            return self._nodes.get(node_id)
+            return self._devices.get(ip)
 
-    def all_nodes(self) -> List[NodeState]:
+    def all_devices(self) -> List[DeviceState]:
         with self._lock:
-            return list(self._nodes.values())
+            return list(self._devices.values())
 
-    def all_nodes_dict(self) -> List[dict]:
+    def all_devices_dict(self) -> List[Dict[str, Any]]:
         with self._lock:
-            return [n.to_dict() for n in self._nodes.values()]
+            return [d.to_dict() for d in self._devices.values()]
 
-    # ── Message ingestion ──────────────────────────────────────────────────────
-    def record_message(self, node_id: str, payload_size: int,
-                       topic: str = "", telemetry: dict | None = None) -> NodeState:
+    # Backward compatible /nodes methods
+    def get(self, node_id: str) -> Optional[Any]:
+        dev = self.get_device(node_id)
+        if not dev:
+            return None
+        # Wrap in an object with to_dict method
+        class NodeWrapper:
+            def __init__(self, d: DeviceState):
+                self._d = d
+                self.node_id = d.ip
+                self.status = d.status
+                self.active_threats = d.active_threats
+                self.threat_history = [
+                    {"threat": a.get("alert", {}).get("signature", "Alert"), "timestamp": a.get("timestamp", 0)}
+                    for a in d.recent_alerts
+                ]
+            def to_dict(self):
+                return self._d.to_node_dict()
+        return NodeWrapper(dev)
+
+    def all_nodes_dict(self) -> List[Dict[str, Any]]:
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.push_message(payload_size, topic)
+            return [d.to_node_dict() for d in self._devices.values()]
 
-            if telemetry:
-                self._ingest_telemetry_fields(node, telemetry)
-            return node
-
-    def _ingest_telemetry_fields(self, node: NodeState, data: dict) -> None:
-        """Extract threat-relevant fields from a decoded telemetry payload."""
-        # Embedded message timestamp (for replay detection)
-        if "ts" in data:
-            node.last_message_ts = float(data["ts"])
-
-        # Sequence ID (replay dedup)
-        if "seq" in data:
-            node.record_seq(int(data["seq"]))
-
-        # Resource metrics
-        if "cpu_percent"     in data: node.last_cpu_pct     = float(data["cpu_percent"])
-        if "ram_percent"     in data: node.last_ram_pct     = float(data["ram_percent"])
-        if "storage_percent" in data: node.last_storage_pct = float(data["storage_percent"])
-
-        # Reboot counter — increment reboot_timestamps when counter increases
-        if "reboot_count" in data:
-            new_count = int(data["reboot_count"])
-            prev = getattr(node, "_last_reboot_count", None)
-            if prev is not None and new_count > prev:
-                node.reboot_timestamps.append(time.time())
-                if len(node.reboot_timestamps) > 30:
-                    node.reboot_timestamps.pop(0)
-                logger.warn(f"Reboot counter increased to {new_count}.", node_id=node.node_id)
-            node._last_reboot_count = new_count  # type: ignore
-
-        # Auth failures
-        if "auth_fails" in data:
-            new_fails = int(data["auth_fails"])
-            prev_fails = getattr(node, "_last_auth_fails", 0)
-            if new_fails > prev_fails:
-                for _ in range(new_fails - prev_fails):
-                    node.auth_fail_timestamps.append(time.time())
-                if len(node.auth_fail_timestamps) > 50:
-                    node.auth_fail_timestamps = node.auth_fail_timestamps[-50:]
-            node._last_auth_fails = new_fails  # type: ignore
-
-        # Firmware hash
-        if "firmware_hash" in data:
-            h = str(data["firmware_hash"])
-            if node.baseline_firmware_hash is None:
-                node.baseline_firmware_hash = h
-                logger.info(f"Firmware hash baseline set: {h[:12]}…", node_id=node.node_id)
-            node.last_firmware_hash = h
-
-        # Config hash
-        if "config_hash" in data:
-            h = str(data["config_hash"])
-            if node.baseline_config_hash is None:
-                node.baseline_config_hash = h
-                logger.info(f"Config hash baseline set: {h[:12]}…", node_id=node.node_id)
-            node.last_config_hash = h
-
-    def record_heartbeat(self, node_id: str) -> NodeState:
+    def all_nodes(self) -> List[Any]:
         with self._lock:
-            node = self.get_or_create(node_id)
-            elapsed = time.time() - node.last_heartbeat
-            node.last_heartbeat = time.time()
-            node.last_seen = node.last_heartbeat
-            if node.status == NodeStatus.OFFLINE:
-                node.status = NodeStatus.HEALTHY
-                node.offline_since = None
-                logger.node_online(node_id)
-            logger.heartbeat(node_id, elapsed)
-            return node
+            return [self.get(ip) for ip in self._devices]
 
-    # ── Score / status updates ─────────────────────────────────────────────────
-    def update_ewma(self, node_id: str, new_rate: float, new_payload: float) -> None:
+    # ── Event Ingestion ────────────────────────────────────────────────────────
+    def ingest_event(self, event: Dict[str, Any]) -> None:
+        """Processes a normalized EVE event (alert, flow, etc.) and updates state."""
+        event_type = event.get("event_type")
+        src_ip = event.get("src_ip")
+        dest_ip = event.get("dest_ip")
+        ts = event.get("timestamp", time.time())
+
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.ewma_rate    = new_rate
-            node.ewma_payload = new_payload
+            # Register IPs as devices (ignore 0.0.0.0 or empty)
+            src_dev = None
+            dst_dev = None
+            if src_ip and src_ip not in ("0.0.0.0", ""):
+                src_dev = self.get_or_create_device(src_ip)
+            if dest_ip and dest_ip not in ("0.0.0.0", ""):
+                dst_dev = self.get_or_create_device(dest_ip)
 
-    def update_score_only(self, node_id: str, new_score: float, old_score: float) -> None:
+            if event_type == "flow":
+                flow_data = event.get("flow", {})
+                b_to_server = flow_data.get("bytes_toserver", 0)
+                b_to_client = flow_data.get("bytes_toclient", 0)
+                p_to_server = flow_data.get("pkts_toserver", 0)
+                p_to_client = flow_data.get("pkts_toclient", 0)
+
+                if src_dev:
+                    src_dev.update_flow(is_inbound=False, bytes_count=b_to_server, pkts_count=p_to_server, now=ts)
+                if dst_dev:
+                    dst_dev.update_flow(is_inbound=True, bytes_count=b_to_client, pkts_count=p_to_client, now=ts)
+
+            elif event_type == "alert":
+                alert_info = event.get("alert", {})
+                sig = alert_info.get("signature", "IDS Alert")
+                sev = alert_info.get("severity", 3)
+
+                # Store in central alert ledger
+                self._all_alerts.append(event)
+                if len(self._all_alerts) > self._ALERT_CAPACITY:
+                    self._all_alerts.pop(0)
+
+                # Minute bucket for time series (e.g. 2026-10-23T15:23:00)
+                dt = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+                minute_key = dt.strftime("%Y-%m-%dT%H:%M:00")
+                self._minute_counts[minute_key] += 1
+
+                # Signature aggregate
+                entry = self._signature_counts[sig]
+                entry["count"] += 1
+                entry["signature"] = sig
+                entry["severity"] = min(entry["severity"], sev)
+
+                # Attach alert to involved device
+                target_dev = src_dev or dst_dev
+                if target_dev:
+                    target_dev.add_alert(event)
+                    old_status, new_status, trig = target_dev.evaluate_status(ts, self.alert_window_secs)
+                    if old_status != new_status:
+                        self._log_status_change(target_dev.ip, old_status, new_status, event)
+
+    def _log_status_change(self, ip: str, old_status: str, new_status: str, alert_event: Optional[Dict[str, Any]] = None) -> None:
+        """Logs a status transition through GhostNet's central logger for toast streaming."""
+        sig = alert_event.get("alert", {}).get("signature", "") if alert_event else ""
+        sev = alert_event.get("alert", {}).get("severity", 3) if alert_event else 3
+
+        if new_status == DeviceStatus.QUARANTINED:
+            logger.warning(
+                f"Device {ip} QUARANTINED: Suricata alert '{sig}' (Severity {sev})",
+                tag="QUARANTINE",
+                node_id=ip,
+                ip=ip,
+                signature=sig,
+                severity=sev,
+            )
+        elif new_status == DeviceStatus.SUSPICIOUS:
+            logger.info(
+                f"Device {ip} marked SUSPICIOUS: Suricata alert '{sig}' (Severity {sev})",
+                tag="WARN",
+                node_id=ip,
+                ip=ip,
+                signature=sig,
+                severity=sev,
+            )
+        elif new_status == DeviceStatus.HEALTHY:
+            logger.info(
+                f"Device {ip} returned to HEALTHY after clean window.",
+                tag="RECOVERED",
+                node_id=ip,
+                ip=ip,
+            )
+
+    # ── Periodic Status Evaluation ─────────────────────────────────────────────
+    def evaluate_all_devices(self) -> List[tuple[str, str, str]]:
+        """Periodic status update across all devices; recovers devices after clean window."""
+        now = time.time()
+        transitions = []
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.anomaly_score = new_score
-            if abs(new_score - old_score) > 0.005:
-                logger.score_update(node_id, old_score, new_score, 0.0, 0.0)
+            for ip, dev in self._devices.items():
+                old_status = dev.status
+                old_s, new_s, trig = dev.evaluate_status(now, self.alert_window_secs)
+                if old_s != new_s:
+                    transitions.append((ip, old_s, new_s))
+                    self._log_status_change(ip, old_s, new_s, trig)
+        return transitions
 
-    def set_anomaly_score(self, node_id: str, score: float,
-                          old_score: float, rate_dev: float, payload_dev: float) -> None:
+    # ── Manual Quarantine / Release ────────────────────────────────────────────
+    def manual_quarantine(self, ip: str, reason: str = "Manual operator quarantine") -> bool:
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.anomaly_score = score
-            logger.score_update(node_id, old_score, score, rate_dev, payload_dev)
+            dev = self.get_or_create_device(ip)
+            dev.manually_quarantined = True
+            dev.status = DeviceStatus.QUARANTINED
+            dev.quarantined_at = time.time()
+            logger.warning(
+                f"Device {ip} manually QUARANTINED ({reason})",
+                tag="QUARANTINE",
+                node_id=ip,
+                ip=ip,
+                reason=reason,
+            )
+            return True
 
-    def update_active_threats(self, node_id: str, active: set) -> None:
+    def mark_recovered(self, ip: str) -> bool:
+        """Manual release: clears quarantine and resets active alerts."""
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.active_threats = active
+            dev = self._devices.get(ip)
+            if not dev:
+                return False
+            dev.manually_quarantined = False
+            dev.status = DeviceStatus.HEALTHY
+            dev.recovered_at = time.time()
+            dev.active_threats.clear()
+            logger.info(
+                f"Device {ip} manually RELEASED to HEALTHY.",
+                tag="RECOVERED",
+                node_id=ip,
+                ip=ip,
+            )
+            return True
 
-    def set_status(self, node_id: str, status: str) -> None:
+    # ── IDS Alert & Metric Queries ─────────────────────────────────────────────
+    def get_alerts(
+        self,
+        limit: int = 100,
+        severity: Optional[int] = None,
+        ip: Optional[str] = None,
+        signature: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.status = status
+            res = self._all_alerts
+            if severity is not None:
+                res = [a for a in res if a.get("alert", {}).get("severity") == severity]
+            if ip is not None:
+                res = [a for a in res if a.get("src_ip") == ip or a.get("dest_ip") == ip]
+            if signature is not None:
+                sig_lower = signature.lower()
+                res = [a for a in res if sig_lower in a.get("alert", {}).get("signature", "").lower()]
+            return res[-limit:]
 
-    def mark_quarantined(self, node_id: str) -> None:
+    def get_ids_stats(self) -> Dict[str, Any]:
+        """Calculates aggregated IDS statistics for dashboard overviews."""
         with self._lock:
-            node = self.get_or_create(node_id)
-            node.status = NodeStatus.QUARANTINED
-            node.quarantine_time = time.time()
-            node.quarantine_clean_streak = 0
-            logger.quarantine_start(node_id)
+            now = time.time()
+            sev_counts = {"1": 0, "2": 0, "3": 0}
+            for a in self._all_alerts:
+                sev = str(a.get("alert", {}).get("severity", 3))
+                if sev in sev_counts:
+                    sev_counts[sev] += 1
 
-    def increment_clean_streak(self, node_id: str) -> int:
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.quarantine_clean_streak += 1
-            return node.quarantine_clean_streak
+            # Top signatures
+            top_sigs = sorted(
+                self._signature_counts.values(),
+                key=lambda x: x["count"],
+                reverse=True
+            )[:10]
 
-    def reset_clean_streak(self, node_id: str) -> None:
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.quarantine_clean_streak = 0
+            # Minutes time series (last 20 minutes)
+            sorted_minutes = sorted(self._minute_counts.items(), key=lambda x: x[0])[-20:]
+            alerts_per_minute = [{"minute": m, "count": c} for m, c in sorted_minutes]
 
-    def mark_recovered(self, node_id: str) -> None:
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.status = NodeStatus.HEALTHY
-            node.recovery_time = time.time()
-            node.quarantine_clean_streak = 0
-            node.reroute_path = None   # RECONFIGURE stage complete, path cleared
-            logger.recovery(node_id)
+            # Device counts
+            quarantined = sum(1 for d in self._devices.values() if d.status == DeviceStatus.QUARANTINED)
+            suspicious = sum(1 for d in self._devices.values() if d.status == DeviceStatus.SUSPICIOUS)
+            healthy = sum(1 for d in self._devices.values() if d.status == DeviceStatus.HEALTHY)
 
-    def set_reroute_path(self, node_id: str, path: Optional[str]) -> None:
-        """Set or clear the alternate communication path assigned during RECONFIGURE stage."""
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.reroute_path = path
+            total_bytes = sum(d.bytes_total for d in self._devices.values())
+            total_pkts = sum(d.pkts_total for d in self._devices.values())
+            total_bps = round(sum(d.bps for d in self._devices.values()), 1)
+            total_pps = round(sum(d.pps for d in self._devices.values()), 1)
 
-    def mark_offline(self, node_id: str, elapsed: float) -> None:
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.status = NodeStatus.OFFLINE
-            node.offline_since = time.time()
-            logger.node_offline(node_id, elapsed)
-
-    def add_threat_history(self, node_id: str, entry: dict) -> None:
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.threat_history.append(entry)
-            if len(node.threat_history) > 200:
-                node.threat_history.pop(0)
-
-    # ── v3: ML / OSI / Fusion setters ─────────────────────────────────────────
-
-    def set_ml_result(self, node_id: str, ml_result) -> None:
-        """Store MLResult fields on the node state."""
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.ml_score        = ml_result.ml_score
-            node.ml_anomaly      = ml_result.ml_anomaly
-            node.ml_confidence   = ml_result.ml_confidence
-            node.ml_warmup       = ml_result.warmup
-            node.ml_sample_count = ml_result.sample_count
-            node.ml_features     = [{"name": n, "value": round(v, 3)}
-                                     for n, v in ml_result.top_features]
-
-    def set_osi_result(self, node_id: str, osi_result) -> None:
-        """Store the primary OSI classification on the node state."""
-        with self._lock:
-            node = self.get_or_create(node_id)
-            node.osi_layer       = osi_result.osi_layer
-            node.osi_layer_name  = osi_result.osi_layer_name
-            node.attack_category = osi_result.attack_category
-            node.osi_confidence  = osi_result.confidence
-            node.osi_evidence    = osi_result.evidence
-
-    def set_fusion_result(self, node_id: str, fusion_result) -> None:
-        """Store ThreatFusion result on the node state and update anomaly_score."""
-        with self._lock:
-            node = self.get_or_create(node_id)
-            old_score               = node.anomaly_score
-            node.fusion_score       = fusion_result.final_score
-            node.fusion_confidence  = fusion_result.confidence
-            node.memory_matches     = [m.to_dict() for m in fusion_result.memory_matches]
-            # Use EWMA-smooth the fusion score into anomaly_score
-            from ghostnet import config as _cfg
-            alpha = _cfg.EWMA_ALPHA
-            node.anomaly_score = alpha * fusion_result.final_score + (1 - alpha) * old_score
-
+            return {
+                "total_alerts": len(self._all_alerts),
+                "severity_counts": sev_counts,
+                "alerts_per_minute": alerts_per_minute,
+                "top_signatures": top_sigs,
+                "total_devices": len(self._devices),
+                "active_quarantined": quarantined,
+                "active_suspicious": suspicious,
+                "active_healthy": healthy,
+                "total_bytes": total_bytes,
+                "total_packets": total_pkts,
+                "total_bps": total_bps,
+                "total_pps": total_pps,
+                "timestamp": now,
+            }

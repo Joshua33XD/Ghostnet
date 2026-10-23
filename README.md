@@ -1,425 +1,128 @@
-# GhostNet
+# GhostNet Network IDS
 
-**GhostNet** is a lightweight IoT monitoring and anomaly-response system designed to detect suspicious behavior from MQTT-connected nodes, monitor node availability, and automatically quarantine anomalous devices.
+**GhostNet** is a high-performance network-only Intrusion Detection System (IDS) dashboard. It consumes Suricata's `eve.json` as its single live data source and provides real-time device health evaluation, traffic statistics, alert telemetry, and on-demand packet drill-down.
 
-It provides:
+---
 
-* MQTT-based node monitoring
-* Statistical anomaly detection
-* Heartbeat/offline detection
-* Automatic node quarantine and recovery
-* Thread-safe in-memory state management
-* FastAPI REST APIs
-* WebSocket-based live dashboard updates
-* A fake ESP32 node simulator for development and testing
+## Architecture Diagram
 
-## Architecture
+```mermaid
+flowchart TD
+    subgraph Network Data Sources
+        SURI[Suricata IDS Engine] -->|Live Wire Capture| EVE[(eve.json)]
+        PCAP[PCAP Replay Mode\nsuricata -r sample.pcap] --> EVE
+        SIM[sensors/ids_sim.py\n--ids-sim demo generator] --> EVE
+    end
 
-```text
-                         ┌─────────────────────┐
-                         │     MQTT Broker      │
-                         └──────────┬──────────┘
-                                    │
-                         MQTT messages / heartbeats
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │    mqtt_client.py   │
-                         │  MQTT connection     │
-                         │      wrapper         │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                    ┌──────────────────────────────┐
-                    │       State Store             │
-                    │ storage/state_store.py        │
-                    │                               │
-                    │ node state • timestamps       │
-                    │ anomaly information           │
-                    │ quarantine status              │
-                    └──────────────┬───────────────┘
-                                   │
-                    ┌──────────────┴──────────────┐
-                    ▼                             ▼
-        ┌─────────────────────┐       ┌─────────────────────┐
-        │ Anomaly Detector    │       │ Heartbeat Monitor   │
-        │                     │       │                     │
-        │ rate anomalies      │       │ missed heartbeat    │
-        │ payload anomalies   │       │ offline detection   │
-        │ EWMA scoring        │       │                     │
-        └──────────┬──────────┘       └──────────┬──────────┘
-                   │                             │
-                   └──────────────┬──────────────┘
-                                  ▼
-                     ┌─────────────────────────┐
-                     │  Quarantine Manager     │
-                     │                         │
-                     │ auto-isolation          │
-                     │ recovery                 │
-                     └────────────┬────────────┘
-                                  │
-                                  ▼
-                     ┌─────────────────────────┐
-                     │       FastAPI API        │
-                     │                         │
-                     │ REST endpoints          │
-                     │ WebSocket feed          │
-                     └────────────┬────────────┘
-                                  │
-                                  ▼
-                            Dashboard / UI
+    subgraph Backend Pipeline
+        EVE -->|Rotation & Tail| TAIL[sensors/eve_tailer.py\nNormalizer]
+        TAIL --> STORE[StateStore\nIP-based Device Registry\nFlow Bps/Pps Rates]
+        
+        STORE --> RULE{Deterministic Status Rule\nNo ML}
+        RULE -->|Severity 1 or 2 in last 60s| QUAR[QUARANTINED]
+        RULE -->|Severity 3 in last 60s| SUSP[SUSPICIOUS]
+        RULE -->|Clean window elapsed| HLTH[HEALTHY]
+
+        QM[Quarantine Manager] -->|Clean window recovery| STORE
+        LOG[logger.py] -->|Broadcasts| WS[/ws/events]
+    end
+
+    subgraph FastAPI REST & Capture API
+        STORE --> API[FastAPI /ids/stats, /ids/alerts, /devices]
+        PCAP_DIR[sensors/suricata/pcaps] --> CAP[/capture/files & /capture/download]
+        TSHARK[tshark CLI\nshell=False] --> DRILL[/capture/packets Drill-Down]
+    end
+
+    subgraph Modern UI Dashboard
+        API --> UI[React IDS Dashboard]
+        WS --> UI
+        DRILL --> UI
+        
+        UI --> V1[1. Overview View\nDevice Cards, Alerts/Min, Severity Breakdown, Live Feed]
+        UI --> V2[2. Alerts View\nFilterable Table, Expandable Raw JSON, Device Links]
+        UI --> V3[3. Devices View\nIP Cards, Bps/Pps Sparklines, Release & Quarantine Actions]
+    end
 ```
 
-## Project Structure
+---
 
-```text
-ghostnet/
-├── config.py
-│   └── Application settings such as MQTT broker configuration
-│       and anomaly/heartbeat thresholds.
-│
-├── mqtt_client.py
-│   └── MQTT connection and message handling wrapper.
-│
-├── storage/
-│   └── state_store.py
-│       Thread-safe in-memory storage for node state.
-│
-├── detection/
-│   ├── anomaly_detector.py
-│   │   └── Statistical anomaly detection based on message rate,
-│   │       payload behavior, and EWMA scoring.
-│   │
-│   └── heartbeat_monitor.py
-│       └── Detects missed heartbeats and offline nodes.
-│
-├── response/
-│   └── quarantine_manager.py
-│       └── Automatically isolates suspicious nodes and manages
-│           recovery.
-│
-├── api/
-│   └── main.py
-│       └── FastAPI REST API and WebSocket dashboard feed.
-│
-├── simulator/
-│   └── fake_node.py
-│       └── Simulates an ESP32 MQTT publisher for development
-│           and testing.
-│
-├── engine.py
-│   └── Application entrypoint that wires the MQTT client,
-│       state store, detection, response, and API components.
-│
-└── requirements.txt
-    └── Python dependencies.
-```
+## Quickstart & Demo Path
 
-## How GhostNet Works
-
-### 1. Node publishes telemetry
-
-An IoT device such as an ESP32 publishes messages to the MQTT broker.
-
-```text
-ESP32 → MQTT Broker → GhostNet
-```
-
-Messages can contain telemetry, status information, or heartbeat signals.
-
-### 2. GhostNet tracks node state
-
-The MQTT client receives messages and updates the thread-safe state store.
-
-The state can contain information such as:
-
-* Node ID
-* Last-seen timestamp
-* Message count
-* Message rate
-* Payload statistics
-* Current anomaly score
-* Heartbeat status
-* Quarantine status
-
-### 3. Anomaly detection
-
-`anomaly_detector.py` evaluates node behavior using multiple signals.
-
-Potential signals include:
-
-* Unusual message frequency
-* Abnormally large or unusual payloads
-* Sudden behavioral changes
-* EWMA-based deviations from normal activity
-
-A node can receive an anomaly score based on these signals.
-
-For example:
-
-```text
-Normal behavior
-      │
-      ▼
-┌───────────────┐
-│ Collect data  │
-└───────┬───────┘
-        ▼
-┌───────────────┐
-│ Calculate     │
-│ anomaly score │
-└───────┬───────┘
-        ▼
-   Score > limit?
-      /      \
-    No        Yes
-    │          │
-    ▼          ▼
- Normal    Quarantine
-```
-
-### 4. Heartbeat monitoring
-
-`heartbeat_monitor.py` tracks the time since each node's last heartbeat.
-
-If a node exceeds the configured heartbeat timeout, GhostNet can mark it as offline or suspicious.
-
-### 5. Automatic quarantine
-
-`quarantine_manager.py` handles the response when a node is considered anomalous.
-
-A typical flow is:
-
-```text
-Anomaly detected
-       │
-       ▼
-Check threshold
-       │
-       ▼
-Quarantine node
-       │
-       ▼
-Monitor node
-       │
-       ├── Still suspicious → Keep isolated
-       │
-       └── Healthy again   → Recover node
-```
-
-The exact isolation mechanism depends on how the MQTT infrastructure and network are configured.
-
-### 6. API and dashboard feed
-
-`api/main.py` exposes the current monitoring state through FastAPI.
-
-REST endpoints can be used by a dashboard or external monitoring service, while WebSockets allow real-time updates without repeatedly polling the server.
-
-## Configuration
-
-Application configuration is centralized in:
-
-```text
-config.py
-```
-
-Typical settings include:
-
-```python
-MQTT_BROKER_HOST = "localhost"
-MQTT_BROKER_PORT = 1883
-
-ANOMALY_THRESHOLD = 0.8
-HEARTBEAT_TIMEOUT = 30
-
-MQTT_TOPIC = "ghostnet/#"
-```
-
-Adjust these values according to your MQTT environment and expected node behavior.
-
-> The exact configuration variables depend on the implementation of `config.py`.
-
-## Installation
-
-### Requirements
-
-* Python 3.10+
-* An MQTT broker such as Mosquitto
-* pip
-
-Clone or copy the project:
+### 1. Zero-Dependency Standalone Demo (Recommended)
+GhostNet includes a built-in realistic IoT IDS simulator that generates live Suricata EVE alerts and flow records:
 
 ```bash
-git clone <your-repository-url>
-cd ghostnet
+# Start backend, Vite dashboard, and EVE simulator together
+python run_ghostnet.py --ids-sim
 ```
 
-Create a virtual environment:
+- **Dashboard:** [http://127.0.0.1:5173](http://127.0.0.1:5173)
+- **API Documentation:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **Live WebSocket:** `ws://127.0.0.1:8000/ws/events`
+
+### 2. Live Suricata Mode
+To run against your live Suricata daemon:
 
 ```bash
-python -m venv .venv
+# Set path to your Suricata eve.json
+export EVE_LOG_PATH=/var/log/suricata/eve.json    # Linux
+# or in PowerShell:
+$env:EVE_LOG_PATH="C:\ProgramData\Suricata\log\eve.json"
+
+python run_ghostnet.py --no-ids-sim
 ```
 
-Activate it on Linux/macOS:
+### 3. PCAP Replay Mode
+Replay the included IoT attack capture through Suricata:
 
 ```bash
-source .venv/bin/activate
+suricata -c sensors/suricata/suricata.yaml \
+         -S sensors/suricata/rules/ghostnet_iot.rules \
+         -r sensors/suricata/pcaps/sample_iot_traffic.pcap \
+         -l data/
 ```
+GhostNet immediately tails `data/eve.json` and updates device statuses live. For detailed Windows, Linux, and Raspberry Pi replay instructions, see [sensors/suricata/PCAP_REPLAY.md](sensors/suricata/PCAP_REPLAY.md).
 
-On Windows:
+---
 
-```powershell
-.venv\Scripts\activate
-```
+## Key Features
 
-Install dependencies:
+1. **Deterministic Status Rules (No ML)**:
+   - Any Suricata **Severity 1 or 2 alert** within the alert window (default 60s) transitions the device to **`QUARANTINED`**.
+   - Any Suricata **Severity 3 alert** marks the device as **`SUSPICIOUS`**.
+   - Devices automatically return to **`HEALTHY`** once the clean window expires without new alerts, or upon manual operator release.
+   - Status is broadcast via WebSocket to drive real-time dashboard notifications.
+
+2. **Flow-Based Traffic Indicators**:
+   - Live Bytes per Second (Bps) and Packets per Second (Pps) calculated per device.
+   - Real-time SVG sparklines in the Devices view.
+
+3. **Accessible 3-View Dashboard**:
+   - **Overview:** High-level status metric cards, alerts-per-minute histogram, severity breakdown (with explicit icons + text badges — never color alone), top signatures, and live WebSocket alert feed.
+   - **Alerts:** Filterable and searchable table with severity toggles, source/dest IPs, protocols, and expandable raw EVE JSON inspector with one-click copy.
+   - **Devices:** Detailed IP device cards, friendly names, live flow sparklines, recent alert lists, and immediate Release / Quarantine actions.
+   - Three curated themes: **Dark (default)**, **Clean (light)**, and **Colorful**.
+
+4. **On-Demand Packet Drill-Down**:
+   - PCAP listing (`/capture/files`) and secure download (`/capture/download/{name}`).
+   - Safe Wireshark display filter queries via tshark with argument lists (never `shell=True`).
+   - Degrades gracefully when tshark is not installed.
+
+5. **Legacy Modules Preserved**:
+   - All legacy detectors, machine learning (Isolation Forest), immune memory, OSI 7-layer mapper, and threat fusion modules are preserved in `/legacy/`.
+
+---
+
+## Test Suite
+
+Run unit and integration tests:
 
 ```bash
-pip install -r requirements.txt
+python -m pytest tests
 ```
 
-## Running GhostNet
-
-Start your MQTT broker first (optional — HTTP and WebSocket ingestion work standalone if MQTT is not running):
-
-For example, with Mosquitto:
-
-```bash
-mosquitto
-```
-
-Then start GhostNet:
-
-```bash
-python engine.py
-```
-
-If the FastAPI application is exposed through Uvicorn directly, you can also run:
-
-```bash
-uvicorn api.main:app --reload
-```
-
-## Running the Fake ESP32 Node
-
-The simulator provides a development-time MQTT/HTTP publisher without requiring physical ESP32 hardware.
-
-Run:
-
-```bash
-python simulator/fake_node.py
-```
-
-The simulated node can be used to test:
-
-* Normal telemetry
-* Heartbeats
-* High message rates
-* Abnormal payloads
-* Offline behavior
-* Quarantine triggers
-* Recovery behavior
-
-A typical development setup is:
-
-```text
-┌───────────────┐
-│ Fake ESP32    │
-└───────┬───────┘
-        │ MQTT / HTTP
-        ▼
-┌───────────────┐
-│ MQTT Broker   │
-└───────┬───────┘
-        │
-        ▼
-┌───────────────┐
-│ GhostNet      │
-└───────┬───────┘
-        │
-        ▼
-┌───────────────┐
-│ API/Dashboard │
-└───────────────┘
-```
-
-## API
-
-The FastAPI application provides access to node monitoring information.
-
-Typical API functionality:
-
-| Endpoint               | Purpose                         |
-| ---------------------- | ------------------------------- |
-| `GET /`                | Health/status check             |
-| `GET /nodes`           | List monitored nodes            |
-| `GET /nodes/{node_id}` | Get a node's current state      |
-| `GET /alerts`          | View anomaly/quarantine events  |
-| WebSocket endpoint     | Receive live monitoring updates |
-
-FastAPI's automatically generated documentation is available when the server is running:
-
-```text
-/docs
-```
-
-and:
-
-```text
-/redoc
-```
-
-## Detection Strategy
-
-GhostNet is designed around multiple detection signals rather than relying on a single rule.
-
-### Message-rate anomaly
-
-Detects nodes publishing significantly more or fewer messages than expected.
-
-### Payload anomaly
-
-Detects unusual payload characteristics, such as unexpected size or statistical changes.
-
-### EWMA
-
-An Exponentially Weighted Moving Average gives more importance to recent observations while retaining historical context.
-
-### Heartbeat anomaly
-
-A node that stops sending heartbeats for longer than the configured timeout can be marked offline.
-
-## Thread Safety
-
-`storage/state_store.py` maintains shared node state.
-
-Because MQTT callbacks, monitoring tasks, API requests, and response logic can potentially access state concurrently, the store provides synchronized access to shared data.
-
-## Security Considerations
-
-GhostNet should be treated as a monitoring and response component, not as a replacement for MQTT security.
-
-For production deployments, consider:
-
-* MQTT authentication
-* TLS encryption
-* Per-device credentials
-* Topic-level authorization
-* Network segmentation
-* Restricted API access
-* API authentication/authorization
-* Secure secret management
-* Audit logging
-* Persistent event storage
-
-Avoid storing credentials directly in source code. Environment variables or a dedicated secrets manager should be used for sensitive configuration.
-
-## License
-
-```text
-MIT License
-```
-
-## Disclaimer
-
-GhostNet is intended for **authorized monitoring and testing of IoT infrastructure**. Only deploy quarantine or network-isolation functionality on devices and networks you own or are explicitly authorized to administer.
+Tests cover:
+- `test_eve_parser.py`: Suricata EVE alert, flow, DNS, HTTP, and TLS record normalization and log rotation handling.
+- `test_status_rules.py`: Severity 1-2 quarantine rules, severity 3 suspicious transitions, and clean-window recovery.
+- `test_security_sanitization.py`: Directory traversal prevention and Wireshark display filter injection blocking.
+- `test_api_endpoints.py`: All FastAPI endpoints and backwards-compatible `/nodes` mapping.

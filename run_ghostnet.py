@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent
 DASHBOARD = ROOT / "dashboard"
 API_URL = "http://127.0.0.1:8000"
@@ -49,54 +48,39 @@ def _wait_for_api(timeout: float = 20.0) -> bool:
     return False
 
 
-def run_api_only() -> None:
+def run_api_only(ids_sim: bool = False) -> None:
     import uvicorn
 
     from ghostnet import config, logger
-    from ghostnet.adapters.http_adapter import HTTPAdapter
-    from ghostnet.adapters.ws_adapter import WSAdapter
-    from ghostnet.api.main import app, set_state_store, set_v3_components
-    from ghostnet.detection.heartbeat_monitor import HeartbeatMonitor
-    from ghostnet.detection.threat_detector import ThreatDetector
+    from ghostnet.api.main import app, set_state_store
     from ghostnet.response.quarantine_manager import QuarantineManager
     from ghostnet.storage.state_store import StateStore
+    from sensors.eve_tailer import EveTailer
 
     store = StateStore()
     set_state_store(store)
 
-    http_adapter = HTTPAdapter(store, app)
-    http_adapter.connect()
+    qm = QuarantineManager(store)
+    qm.start()
 
-    ws_adapter = WSAdapter(store, app)
-    ws_adapter.connect()
+    eve_path = Path(config.EVE_LOG_PATH)
+    tailer = EveTailer(eve_path, callback=store.ingest_event, from_beginning=True)
+    tailer.start()
 
-    threat_detector = ThreatDetector(store)
-    threat_detector.start()
-
-    heartbeat_monitor = HeartbeatMonitor(store)
-    heartbeat_monitor.start()
-
-    def publish_command(topic: str, command: str) -> None:
-        logger.info(f"[Demo mode] Would send {command!r} -> {topic}")
-
-    quarantine_manager = QuarantineManager(
-        store,
-        publish_fn=publish_command,
-        immune_memory=threat_detector.immune_memory,
-    )
-    quarantine_manager.start()
-
-    set_v3_components(
-        ml_detector=threat_detector._ml,
-        immune_memory=threat_detector.immune_memory,
-    )
+    sim = None
+    if ids_sim:
+        from sensors.ids_sim import IDSSimulator
+        print(f"[GhostNet] Starting IDS Simulator emitting to {eve_path}...")
+        sim = IDSSimulator(output_path=eve_path, interval=1.0, alert_probability=0.35)
+        sim.start()
 
     try:
         uvicorn.run(app, host="127.0.0.1", port=config.API_PORT, log_level="warning")
     finally:
-        quarantine_manager.stop()
-        heartbeat_monitor.stop()
-        threat_detector.stop()
+        if sim:
+            sim.stop()
+        tailer.stop()
+        qm.stop()
 
 
 def run_everything(args: argparse.Namespace) -> int:
@@ -112,8 +96,8 @@ def run_everything(args: argparse.Namespace) -> int:
         return 1
 
     backend_cmd = [_python(), str(Path(__file__).resolve()), "--api-only"]
-    if args.mqtt:
-        backend_cmd = [_python(), "engine.py"]
+    if args.ids_sim:
+        backend_cmd.append("--ids-sim")
 
     try:
         processes.append(_start("backend", backend_cmd, ROOT))
@@ -123,24 +107,12 @@ def run_everything(args: argparse.Namespace) -> int:
 
         processes.append(_start("dashboard", [_npm(), "run", "dev", "--", "--host", "127.0.0.1"], DASHBOARD))
 
-        if args.simulator:
-            sim_cmd = [
-                _python(),
-                "-m",
-                "ghostnet.simulator.fake_node",
-                "--connection",
-                "http",
-                "--mode",
-                args.mode,
-                "--api-url",
-                API_URL,
-            ]
-            processes.append(_start("HTTP simulator", sim_cmd, ROOT))
-
         print()
-        print("[GhostNet] running")
-        print(f"[GhostNet] API docs:  {API_URL}/docs")
-        print(f"[GhostNet] dashboard: {DASHBOARD_URL}")
+        print("[GhostNet] Network IDS running")
+        print(f"[GhostNet] API docs:   {API_URL}/docs")
+        print(f"[GhostNet] dashboard:  {DASHBOARD_URL}")
+        if args.ids_sim:
+            print("[GhostNet] IDS simulator active: streaming realistic IoT EVE alerts & flows")
         print("[GhostNet] press Ctrl+C here to stop everything")
 
         while True:
@@ -165,31 +137,21 @@ def run_everything(args: argparse.Namespace) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run GhostNet backend, dashboard, and simulator.")
+    parser = argparse.ArgumentParser(description="Run GhostNet Network IDS backend, dashboard, and simulator.")
     parser.add_argument("--api-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--install", action="store_true", help="Install Python and dashboard dependencies first.")
-    parser.add_argument("--mqtt", action="store_true", help="Use engine.py with MQTT instead of API-only demo mode.")
-    parser.add_argument("--no-simulator", dest="simulator", action="store_false", help="Do not start the fake node.")
     parser.add_argument(
-        "--mode",
-        default="normal",
-        choices=[
-            "normal",
-            "dos",
-            "mqtt-abuse",
-            "replay",
-            "exfiltration",
-            "resource",
-            "crash",
-            "firmware-tamper",
-            "config-tamper",
-            "brute-force",
-            "anomaly",
-            "flap",
-        ],
-        help="Simulator mode to run.",
+        "--ids-sim",
+        action="store_true",
+        default=True,
+        help="Run realistic Suricata EVE alert & flow simulator.",
     )
-    parser.set_defaults(simulator=True)
+    parser.add_argument(
+        "--no-ids-sim",
+        dest="ids_sim",
+        action="store_false",
+        help="Do not start the IDS simulator (use live Suricata eve.json only).",
+    )
     return parser.parse_args()
 
 
@@ -199,7 +161,7 @@ def main() -> int:
 
     args = parse_args()
     if args.api_only:
-        run_api_only()
+        run_api_only(ids_sim=args.ids_sim)
         return 0
     return run_everything(args)
 
