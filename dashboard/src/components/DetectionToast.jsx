@@ -1,21 +1,20 @@
-// DetectionToast — top-right spring notification when the backend flags an anomaly
 import { useEffect, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, ShieldAlert } from 'lucide-react'
 import { SPRING } from '../motion.js'
-import { getEventIcon, formatRelativeTime } from '../utils.js'
+import { formatRelativeTime } from '../utils.js'
 
 const WATCH = ['SUSPICIOUS', 'ATTACK', 'THREAT', 'QUARANTINE', 'WARN', 'ANOMALY']
 
 function toastMeta(tag) {
   const t = (tag ?? '').toUpperCase()
   if (t.startsWith('THREAT') || t.includes('ATTACK')) {
-    return { icon: ShieldAlert, color: 'var(--status-danger)', title: 'Threat detected' }
+    return { icon: ShieldAlert, tone: 'danger', title: 'Threat detected' }
   }
   if (t.includes('QUARANTINE')) {
-    return { icon: ShieldAlert, color: 'var(--status-danger)', title: 'Node quarantined' }
+    return { icon: ShieldAlert, tone: 'danger', title: 'Host isolated' }
   }
-  return { icon: AlertTriangle, color: 'var(--status-warn)', title: 'Suspicious behaviour detected' }
+  return { icon: AlertTriangle, tone: 'warn', title: 'Watch condition' }
 }
 
 export default function DetectionToast({ events }) {
@@ -39,40 +38,31 @@ export default function DetectionToast({ events }) {
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
+  const meta = current ? toastMeta(current.tag ?? current.event_type) : null
+  const Icon = meta?.icon
+
   return (
-    <div style={{ position: 'fixed', top: 68, right: 20, zIndex: 1200, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+    <div className="wf-toast-layer">
       <AnimatePresence>
-        {current && (
+        {current && meta && (
           <motion.div
             key={current._id ?? 'detect-toast'}
-            className="detection-toast"
-            initial={{ x: 60, opacity: 0, scale: 0.95 }}
-            animate={{ x: 0, opacity: 1, scale: 1 }}
-            exit={{ x: 40, opacity: 0, scale: 0.97 }}
+            className={`wf-toast wf-toast--${meta.tone}`}
+            initial={{ y: 24, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
             transition={SPRING.snappy}
-            style={{ ['--toast-color']: toastMeta(current.tag ?? current.event_type).color }}
+            role="status"
           >
-            <div
-              className="detection-toast-icon"
-              style={{ color: toastMeta(current.tag ?? current.event_type).color }}
-            >
-              {(() => { const { icon: Icon } = toastMeta(current.tag ?? current.event_type); return <Icon size={15} /> })()}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <div className="detection-toast-title">
-                {toastMeta(current.tag ?? current.event_type).title}
-              </div>
-              <div className="detection-toast-msg">
+            <Icon size={16} aria-hidden="true" />
+            <div>
+              <div className="wf-toast-title">{meta.title}</div>
+              <div className="wf-toast-msg">
                 {current.node_id ? `${current.node_id} · ` : ''}
                 {String(current.message ?? current.tag ?? '').slice(0, 70)}
               </div>
-              <div className="detection-toast-time">
-                {getEventIcon(current.tag)} {formatRelativeTime(current._received, current.ts)}
-              </div>
+              <div className="wf-toast-time">{formatRelativeTime(current._received, current.ts)}</div>
             </div>
-            {current.node_id && (
-              <span className="detection-toast-tag">{current.node_id}</span>
-            )}
           </motion.div>
         )}
       </AnimatePresence>

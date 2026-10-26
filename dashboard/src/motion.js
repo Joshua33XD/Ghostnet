@@ -18,7 +18,7 @@ export const DUR = {
 }
 
 // ── Stagger container ──────────────────────────────────────────────────────
-export const stagger = (staggerChildren = 0.06, delayChildren = 0) => ({
+export const stagger = (staggerChildren = 0.05, delayChildren = 0) => ({
   hidden: {},
   visible: { transition: { staggerChildren, delayChildren } },
 })

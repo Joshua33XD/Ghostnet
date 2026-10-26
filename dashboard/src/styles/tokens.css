@@ -1,0 +1,182 @@
+:root {
+  /* Obsidian Cyber SOC — Core Design System Tokens */
+  --wf-bg: #08090d;
+  --wf-bg-2: #0e1118;
+  --wf-panel: #131722;
+  --wf-raised: #181f30;
+  --wf-overlay: #1e263c;
+  --wf-ink: #f0f4fc;
+  --wf-ink-soft: #94a3b8;
+  --wf-mute: #54627a;
+  
+  --wf-line: rgba(255, 255, 255, 0.08);
+  --wf-line-strong: rgba(255, 255, 255, 0.16);
+  --wf-line-glow: rgba(0, 242, 254, 0.3);
+
+  /* Cyber Telemetry & Accent Colors */
+  --wf-cyan: #00f2fe;
+  --wf-cyan-deep: #0ea5e9;
+  --wf-cyan-bg: rgba(0, 242, 254, 0.1);
+  --wf-cyan-glow: 0 0 20px rgba(0, 242, 254, 0.28);
+
+  --wf-ok: #10b981;
+  --wf-ok-bg: rgba(16, 185, 129, 0.12);
+  --wf-ok-border: rgba(16, 185, 129, 0.35);
+  --wf-ok-glow: 0 0 16px rgba(16, 185, 129, 0.3);
+
+  --wf-watch: #f59e0b;
+  --wf-watch-bg: rgba(245, 158, 11, 0.14);
+  --wf-watch-border: rgba(245, 158, 11, 0.4);
+  --wf-watch-glow: 0 0 16px rgba(245, 158, 11, 0.3);
+
+  --wf-stop: #ff3366;
+  --wf-stop-bg: rgba(255, 51, 102, 0.14);
+  --wf-stop-border: rgba(255, 51, 102, 0.45);
+  --wf-stop-glow: 0 0 24px rgba(255, 51, 102, 0.35);
+
+  --wf-purple: #a855f7;
+  --wf-purple-bg: rgba(168, 85, 247, 0.14);
+
+  --wf-font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --wf-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  
+  --wf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --wf-mast: 64px;
+  --wf-radius: 12px;
+  --wf-radius-sm: 8px;
+  --wf-radius-lg: 16px;
+  --wf-shadow: 0 20px 48px -20px rgba(0, 0, 0, 0.8);
+  --wf-shadow-glow: 0 0 40px -10px rgba(0, 242, 254, 0.15);
+
+  /* Legacy mapping aliases */
+  --bg: var(--wf-bg);
+  --surface: var(--wf-panel);
+  --surface-raised: var(--wf-raised);
+  --surface-overlay: var(--wf-overlay);
+  --border: var(--wf-line);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-focus: var(--wf-cyan);
+  --text-primary: var(--wf-ink);
+  --text-secondary: var(--wf-ink-soft);
+  --text-muted: var(--wf-mute);
+  --accent: var(--wf-cyan);
+  --accent-bg: var(--wf-cyan-bg);
+  --accent-border: rgba(0, 242, 254, 0.35);
+  --accent-soft: rgba(0, 242, 254, 0.18);
+  --status-healthy: var(--wf-ok);
+  --status-healthy-bg: var(--wf-ok-bg);
+  --status-healthy-border: var(--wf-ok-border);
+  --status-warn: var(--wf-watch);
+  --status-warn-bg: var(--wf-watch-bg);
+  --status-warn-border: var(--wf-watch-border);
+  --status-danger: var(--wf-stop);
+  --status-danger-bg: var(--wf-stop-bg);
+  --status-danger-border: var(--wf-stop-border);
+  --font-sans: var(--wf-font);
+  --font-mono: var(--wf-mono);
+  --cyan: var(--wf-cyan);
+  --purple: var(--wf-purple);
+  --dur-fast: 160ms;
+  --dur-mid: 280ms;
+}
+
+/* Titanium Defense — High-Contrast Clean Light Ops Room */
+html.theme-light {
+  --wf-bg: #f4f6fa;
+  --wf-bg-2: #eaeff8;
+  --wf-panel: #ffffff;
+  --wf-raised: #f8fafc;
+  --wf-overlay: #ffffff;
+  --wf-ink: #0f172a;
+  --wf-ink-soft: #475569;
+  --wf-mute: #64748b;
+
+  --wf-line: rgba(15, 23, 42, 0.09);
+  --wf-line-strong: rgba(15, 23, 42, 0.16);
+  --wf-line-glow: rgba(2, 132, 199, 0.3);
+
+  --wf-cyan: #0284c7;
+  --wf-cyan-deep: #0369a1;
+  --wf-cyan-bg: rgba(2, 132, 199, 0.1);
+  --wf-cyan-glow: 0 4px 16px rgba(2, 132, 199, 0.2);
+
+  --wf-ok: #059669;
+  --wf-ok-bg: rgba(5, 150, 105, 0.1);
+  --wf-ok-border: rgba(5, 150, 105, 0.3);
+  --wf-ok-glow: 0 2px 10px rgba(5, 150, 105, 0.18);
+
+  --wf-watch: #d97706;
+  --wf-watch-bg: rgba(217, 119, 6, 0.12);
+  --wf-watch-border: rgba(217, 119, 6, 0.35);
+  --wf-watch-glow: 0 2px 10px rgba(217, 119, 6, 0.18);
+
+  --wf-stop: #e11d48;
+  --wf-stop-bg: rgba(225, 29, 72, 0.1);
+  --wf-stop-border: rgba(225, 29, 72, 0.35);
+  --wf-stop-glow: 0 4px 18px rgba(225, 29, 72, 0.2);
+
+  --wf-purple: #7c3aed;
+  --wf-purple-bg: rgba(124, 58, 237, 0.1);
+
+  --wf-shadow: 0 16px 36px -20px rgba(15, 23, 42, 0.18);
+  --wf-shadow-glow: 0 4px 24px rgba(2, 132, 199, 0.08);
+
+  --accent-border: rgba(2, 132, 199, 0.35);
+  --border-subtle: rgba(15, 23, 42, 0.05);
+}
+
+/* Neon Grid — Synthwave Cyberpunk Console */
+html.theme-colorful {
+  --wf-bg: #070512;
+  --wf-bg-2: #0f0a24;
+  --wf-panel: #160f33;
+  --wf-raised: #1f1446;
+  --wf-overlay: #291b5c;
+  --wf-ink: #f5f3ff;
+  --wf-ink-soft: #c4b5fd;
+  --wf-mute: #8b5cf6;
+
+  --wf-line: rgba(168, 85, 247, 0.18);
+  --wf-line-strong: rgba(168, 85, 247, 0.3);
+  --wf-line-glow: rgba(236, 72, 153, 0.4);
+
+  --wf-cyan: #06b6d4;
+  --wf-cyan-deep: #0891b2;
+  --wf-cyan-bg: rgba(6, 182, 212, 0.14);
+  --wf-cyan-glow: 0 0 24px rgba(6, 182, 212, 0.45);
+
+  --wf-ok: #10b981;
+  --wf-ok-bg: rgba(16, 185, 129, 0.16);
+  --wf-ok-border: rgba(16, 185, 129, 0.45);
+  --wf-ok-glow: 0 0 20px rgba(16, 185, 129, 0.4);
+
+  --wf-watch: #fbbf24;
+  --wf-watch-bg: rgba(251, 191, 36, 0.16);
+  --wf-watch-border: rgba(251, 191, 36, 0.45);
+  --wf-watch-glow: 0 0 20px rgba(251, 191, 36, 0.4);
+
+  --wf-stop: #f43f5e;
+  --wf-stop-bg: rgba(244, 63, 94, 0.18);
+  --wf-stop-border: rgba(244, 63, 94, 0.55);
+  --wf-stop-glow: 0 0 30px rgba(244, 63, 94, 0.5);
+
+  --wf-purple: #c084fc;
+  --wf-purple-bg: rgba(192, 132, 252, 0.18);
+
+  --wf-shadow: 0 24px 56px -20px rgba(0, 0, 0, 0.9);
+  --wf-shadow-glow: 0 0 44px -10px rgba(168, 85, 247, 0.35);
+
+  --accent-border: rgba(6, 182, 212, 0.45);
+  --border-subtle: rgba(168, 85, 247, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.allow-motion) *,
+  html:not(.allow-motion) *::before,
+  html:not(.allow-motion) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

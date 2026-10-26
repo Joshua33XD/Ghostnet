@@ -92,8 +92,10 @@ export function formatElapsed(ts) {
 
 export function formatBytes(bytes) {
   if (!bytes) return '0 B'
-  if (bytes < 1024) return `${bytes.toFixed(0)} B`
-  return `${(bytes / 1024).toFixed(1)} KB`
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
+  return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`
 }
 
 // --- Event-timestamp helpers ---
@@ -130,8 +132,12 @@ export function formatExactTime(receivedMs, rawTs) {
 /**
  * Format a rate number nicely (e.g. 1234 → "1.2 k/s")
  */
-export function formatRate(n) {
-  if (n == null) return '—'
-  if (n >= 1000) return (n / 1000).toFixed(1) + ' k/s'
-  return n.toFixed(0) + '/s'
+export function formatRate(bps) {
+  if (!bps) return '0 B/s'
+  if (bps >= 1048576) return `${(bps / 1048576).toFixed(1)} MB/s`
+  if (bps >= 1024) return `${(bps / 1024).toFixed(1)} KB/s`
+  return `${Math.round(bps)} B/s`
 }
+
+export { cn } from './lib/utils.js'
+

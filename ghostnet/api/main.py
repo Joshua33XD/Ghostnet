@@ -51,9 +51,20 @@ app = FastAPI(
     version="3.0.0",
 )
 
+def _cors_origins() -> List[str]:
+    raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173")
+    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    return origins or ["http://localhost:5173"]
+
+
+class EnvCORSMiddleware(CORSMiddleware):
+    def is_allowed_origin(self, origin: str) -> bool:
+        return origin in _cors_origins()
+
+
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
+    EnvCORSMiddleware,
+    allow_origins=[],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -121,16 +132,27 @@ def get_device(ip: str) -> Dict[str, Any]:
 
 
 @app.post("/devices/{ip}/quarantine", tags=["Devices"])
-def quarantine_device(ip: str, reason: str = "Manual operator quarantine") -> Dict[str, str]:
+def quarantine_device(
+    ip: str,
+    reason: str = "Manual operator quarantine",
+    x_api_key: Optional[str] = Header(None),
+    api_key: Optional[str] = Query(None),
+) -> Dict[str, str]:
     """Manually quarantines a device by IP."""
+    _verify_api_key(x_api_key, api_key)
     store = get_store()
     store.manual_quarantine(ip, reason=reason)
     return {"result": f"Device {ip} quarantined.", "status": DeviceStatus.QUARANTINED}
 
 
 @app.post("/devices/{ip}/release", tags=["Devices"])
-def release_device(ip: str) -> Dict[str, str]:
+def release_device(
+    ip: str,
+    x_api_key: Optional[str] = Header(None),
+    api_key: Optional[str] = Query(None),
+) -> Dict[str, str]:
     """Manually releases a quarantined device back to HEALTHY status."""
+    _verify_api_key(x_api_key, api_key)
     store = get_store()
     store.mark_recovered(ip)
     return {"result": f"Device {ip} released.", "status": DeviceStatus.HEALTHY}

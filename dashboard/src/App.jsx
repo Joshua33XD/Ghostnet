@@ -1,20 +1,41 @@
-// =============================================================================
-// GhostNet Network IDS — App.jsx
-// 3-View Architecture: Overview, Alerts, Devices + Packet Drill-Down
-// =============================================================================
-import React, { useState, useCallback } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion, MotionConfig } from 'framer-motion'
 import { useGhostNet } from './useGhostNet.js'
-import Header from './components/Header.jsx'
-import Sidebar from './components/Sidebar.jsx'
+import CommandBar from './components/CommandBar.jsx'
 import OverviewView from './components/OverviewView.jsx'
 import AlertsView from './components/AlertsView.jsx'
 import DevicesView from './components/DevicesView.jsx'
-import DetectionToast from './components/DetectionToast.jsx'
+import PcapStudioView from './components/PcapStudioView.jsx'
 import PacketDrillDownModal from './components/PacketDrillDownModal.jsx'
-import { initTheme, cycleTheme, applyTheme, THEMES } from './utils/theme.js'
+import { initTheme, applyTheme } from './utils/theme.js'
 import { getApiUrl } from './apiConfig.js'
 import { viewTransition } from './motion.js'
+
+// Simple synthesized Web Audio cyber beep
+function playCyberAlertSiren() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc.type = 'sawtooth'
+    osc.frequency.setValueAtTime(880, ctx.currentTime) // A5
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.18)
+
+    gain.gain.setValueAtTime(0.08, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22)
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.start()
+    osc.stop(ctx.currentTime + 0.22)
+  } catch (e) {
+    // Ignore audio autoplay restrictions
+  }
+}
 
 export default function App() {
   const {
@@ -24,6 +45,7 @@ export default function App() {
     events,
     wsStatus,
     isLoading,
+    error,
     releaseDevice,
     quarantineDevice,
     fetchCaptureFiles,
@@ -31,13 +53,28 @@ export default function App() {
   } = useGhostNet()
 
   const [theme, setTheme] = useState(initTheme)
-  const [currentView, setCurrentView] = useState('overview') // 'overview' | 'alerts' | 'devices'
+  const [currentView, setCurrentView] = useState('overview')
   const [selectedDeviceIp, setSelectedDeviceIp] = useState(null)
   const [packetModalOpen, setPacketModalOpen] = useState(false)
   const [packetModalIp, setPacketModalIp] = useState('')
+  const [audioEnabled, setAudioEnabled] = useState(false)
 
-  const toggleTheme = useCallback(() => {
-    setTheme(prev => cycleTheme(prev))
+  // Track latest alert to trigger cyber audio chime if enabled
+  const lastAlertTimestampRef = useRef(null)
+  useEffect(() => {
+    if (!audioEnabled || alerts.length === 0) return
+    const topAlert = alerts[0]
+    if (topAlert && topAlert.timestamp !== lastAlertTimestampRef.current) {
+      lastAlertTimestampRef.current = topAlert.timestamp
+      if (topAlert.alert?.severity === 1) {
+        playCyberAlertSiren()
+      }
+    }
+  }, [alerts, audioEnabled])
+
+  const handleSelectTheme = useCallback((newTheme) => {
+    applyTheme(newTheme)
+    setTheme(newTheme)
   }, [])
 
   const handleSelectDeviceFromAlert = useCallback((ip) => {
@@ -56,78 +93,87 @@ export default function App() {
   const apiConfigured = Boolean(getApiUrl())
 
   return (
-    <MotionConfig reducedMotion={import.meta.env.PROD ? 'user' : 'never'}>
-      <div className="app-root">
-        <Header
+    <MotionConfig reducedMotion="user">
+      <div className="wf-app">
+        <a className="wf-skip" href="#main-content">Skip to content</a>
+
+        <CommandBar
+          currentView={currentView}
+          onViewChange={setCurrentView}
           wsStatus={wsStatus}
           nodeCount={devices.length}
-          eventCount={events.length}
+          alertCount={alerts.length}
+          quarantinedCount={quarantinedCount}
+          suspiciousCount={suspiciousCount}
           theme={theme}
-          onThemeToggle={toggleTheme}
+          onThemeSelect={handleSelectTheme}
           networkState={networkState}
+          audioEnabled={audioEnabled}
+          onToggleAudio={() => setAudioEnabled(!audioEnabled)}
+          stats={stats}
+          onOpenCapture={handleOpenPacketDrillDown}
         />
 
-        <DetectionToast events={events} />
+        <main className="wf-stage" id="main-content" tabIndex={-1}>
+          {!apiConfigured && (
+            <div className="wf-banner" role="alert">
+              API endpoint not configured. Set VITE_API_URL or save a URL from the overflow menu.
+            </div>
+          )}
+          {error && (
+            <div className="wf-banner" role="alert">{String(error)}</div>
+          )}
 
-        <div className="app-layout">
-          <Sidebar
-            currentView={currentView}
-            onViewChange={setCurrentView}
-            devices={devices}
-            alertCount={alerts.length}
-          />
-
-          <main className="app-main" id="main-content" tabIndex={-1}>
-            {!apiConfigured && (
-              <div className="api-missing-banner" role="alert">
-                API endpoint not configured. Set VITE_GHOSTNET_API_URL or use local backend.
-              </div>
+          <AnimatePresence mode="wait">
+            {currentView === 'overview' && (
+              <motion.div key="overview" {...viewTransition}>
+                <OverviewView
+                  devices={devices}
+                  stats={stats}
+                  alerts={alerts}
+                  events={events}
+                  onNavigate={setCurrentView}
+                  onSelectDevice={handleSelectDeviceFromAlert}
+                  isLoading={isLoading}
+                />
+              </motion.div>
             )}
 
-            <div className="main-scroll">
-              <AnimatePresence mode="wait">
-                {currentView === 'overview' && (
-                  <motion.div key="overview" {...viewTransition} style={{ display: 'contents' }}>
-                    <OverviewView
-                      devices={devices}
-                      stats={stats}
-                      alerts={alerts}
-                      events={events}
-                      onNavigate={setCurrentView}
-                      onSelectDevice={handleSelectDeviceFromAlert}
-                      isLoading={isLoading}
-                    />
-                  </motion.div>
-                )}
+            {currentView === 'alerts' && (
+              <motion.div key="alerts" {...viewTransition}>
+                <AlertsView
+                  alerts={alerts}
+                  devices={devices}
+                  onSelectDevice={handleSelectDeviceFromAlert}
+                  isLoading={isLoading}
+                />
+              </motion.div>
+            )}
 
-                {currentView === 'alerts' && (
-                  <motion.div key="alerts" {...viewTransition} style={{ display: 'contents' }}>
-                    <AlertsView
-                      alerts={alerts}
-                      devices={devices}
-                      onSelectDevice={handleSelectDeviceFromAlert}
-                      isLoading={isLoading}
-                    />
-                  </motion.div>
-                )}
+            {currentView === 'devices' && (
+              <motion.div key="devices" {...viewTransition}>
+                <DevicesView
+                  devices={devices}
+                  selectedIp={selectedDeviceIp}
+                  onRelease={releaseDevice}
+                  onQuarantine={quarantineDevice}
+                  onOpenPacketDrillDown={handleOpenPacketDrillDown}
+                  isLoading={isLoading}
+                />
+              </motion.div>
+            )}
 
-                {currentView === 'devices' && (
-                  <motion.div key="devices" {...viewTransition} style={{ display: 'contents' }}>
-                    <DevicesView
-                      devices={devices}
-                      onRelease={releaseDevice}
-                      onQuarantine={quarantineDevice}
-                      onOpenPacketDrillDown={handleOpenPacketDrillDown}
-                      isLoading={isLoading}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </main>
-        </div>
+            {currentView === 'pcap' && (
+              <motion.div key="pcap" {...viewTransition}>
+                <PcapStudioView
+                  fetchCaptureFiles={fetchCaptureFiles}
+                  inspectPackets={inspectPackets}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </main>
 
-        {/* Phase 3: Packet Drill-Down Modal */}
         <PacketDrillDownModal
           isOpen={packetModalOpen}
           onClose={() => setPacketModalOpen(false)}

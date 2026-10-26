@@ -1,0 +1,368 @@
+/* =============================================================================
+   GhostNet Cyber SOC — Shell Styles (shell.css)
+   ============================================================================= */
+
+.wf-skip {
+  position: absolute;
+  left: 14px;
+  top: -50px;
+  z-index: 100;
+  padding: 8px 14px;
+  background: var(--wf-cyan);
+  color: #08090d;
+  border-radius: var(--wf-radius-sm);
+  font-weight: 700;
+  font-size: 13px;
+  transition: top var(--dur-fast) var(--wf-ease);
+}
+.wf-skip:focus {
+  top: 14px;
+}
+
+.wf-app {
+  isolation: isolate;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--wf-bg);
+  background-image:
+    radial-gradient(ellipse 900px 400px at 50% -80px, rgba(0, 242, 254, 0.07), transparent),
+    radial-gradient(ellipse 600px 300px at 90% 100%, rgba(168, 85, 247, 0.04), transparent);
+  color: var(--wf-ink);
+  overflow: hidden;
+}
+
+/* Scanline / Grid subtle texture for authentic cybersecurity feel */
+.wf-app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.015),
+    rgba(255, 255, 255, 0.015) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  z-index: 1;
+  opacity: 0.6;
+}
+
+/* Masthead / Command Bar */
+.wf-mast {
+  position: relative;
+  z-index: 20;
+  height: var(--wf-mast);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--wf-line);
+  background: rgba(14, 17, 24, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.wf-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+  user-select: none;
+}
+
+.wf-brand-icon {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(168, 85, 247, 0.15));
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  border-radius: 9px;
+  color: var(--wf-cyan);
+  box-shadow: 0 0 16px rgba(0, 242, 254, 0.2);
+}
+
+.wf-brand-icon-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 12px;
+  border: 1px solid var(--wf-cyan);
+  opacity: 0;
+  animation: wfBeacon 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes wfBeacon {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.wf-brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.wf-brand-title {
+  font-family: var(--wf-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wf-ink);
+  line-height: 1.1;
+}
+
+.wf-brand-subtitle {
+  font-family: var(--wf-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--wf-cyan);
+  text-transform: uppercase;
+}
+
+/* Center Navigation Tabs */
+.wf-mast-nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.wf-nav-tabs {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(19, 23, 34, 0.7);
+  border: 1px solid var(--wf-line);
+  border-radius: 12px;
+}
+
+.wf-nav-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-family: var(--wf-font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--wf-ink-soft);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  transition: color var(--dur-fast) ease;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+.wf-nav-tab:hover {
+  color: var(--wf-ink);
+}
+
+.wf-nav-tab.is-active {
+  color: #08090d;
+  font-weight: 600;
+}
+
+.wf-nav-pill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--wf-cyan), #38bdf8);
+  border-radius: 8px;
+  z-index: -1;
+  box-shadow: 0 2px 14px rgba(0, 242, 254, 0.35);
+}
+
+.wf-nav-badge {
+  font-family: var(--wf-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}
+
+.wf-nav-tab.is-active .wf-nav-badge {
+  background: rgba(0, 0, 0, 0.2);
+  color: #08090d;
+}
+
+/* Masthead Right Tools & Telemetry */
+.wf-mast-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+}
+
+.wf-hud-chips {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wf-hud-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--wf-line);
+  border-radius: 8px;
+  font-family: var(--wf-mono);
+  font-size: 11px;
+  color: var(--wf-ink-soft);
+}
+
+.wf-hud-chip-val {
+  color: var(--wf-ink);
+  font-weight: 600;
+}
+
+.wf-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wf-ok);
+  box-shadow: 0 0 8px var(--wf-ok);
+  animation: wfPulseOk 2s infinite ease-in-out;
+}
+
+.wf-live-dot.is-offline {
+  background: var(--wf-stop);
+  box-shadow: 0 0 8px var(--wf-stop);
+  animation: none;
+}
+
+.wf-live-dot.is-connecting {
+  background: var(--wf-watch);
+  box-shadow: 0 0 8px var(--wf-watch);
+}
+
+@keyframes wfPulseOk {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}
+
+/* Tool Buttons in masthead */
+.wf-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--wf-line);
+  border-radius: 8px;
+  color: var(--wf-ink-soft);
+  transition: all var(--dur-fast) ease;
+}
+
+.wf-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--wf-line-strong);
+  color: var(--wf-ink);
+}
+
+.wf-tool-btn.is-active {
+  color: var(--wf-cyan);
+  border-color: rgba(0, 242, 254, 0.4);
+  background: var(--wf-cyan-bg);
+}
+
+/* Stage Area (Scrollable body view) */
+.wf-stage {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 28px 48px;
+}
+
+/* Alert Banner */
+.wf-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  margin-bottom: 20px;
+  background: rgba(255, 51, 102, 0.1);
+  border: 1px solid var(--wf-stop-border);
+  border-radius: 12px;
+  color: #ff99b0;
+  font-family: var(--wf-mono);
+  font-size: 13px;
+  backdrop-filter: blur(12px);
+}
+
+.wf-banner.is-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: var(--wf-watch-border);
+  color: #fcd34d;
+}
+
+.wf-banner.is-isolated {
+  background: linear-gradient(90deg, rgba(255, 51, 102, 0.15), rgba(255, 51, 102, 0.05));
+  border-left: 4px solid var(--wf-stop);
+}
+
+/* Modal Backdrops */
+.wf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(8, 9, 13, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.wf-modal {
+  position: relative;
+  width: 100%;
+  max-width: 960px;
+  max-height: 85vh;
+  background: var(--wf-panel);
+  border: 1px solid var(--wf-line-strong);
+  border-radius: var(--wf-radius-lg);
+  box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.8), 0 0 32px -8px rgba(0, 242, 254, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wf-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--wf-line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.wf-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.wf-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--wf-line);
+  background: rgba(255, 255, 255, 0.02);
+}

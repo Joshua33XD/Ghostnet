@@ -52,7 +52,7 @@ flowchart TD
 GhostNet includes a built-in realistic IoT IDS simulator that generates live Suricata EVE alerts and flow records:
 
 ```bash
-# Start backend, Vite dashboard, and EVE simulator together
+# Local: backend + Vite dashboard + EVE simulator
 python run_ghostnet.py --ids-sim
 ```
 
@@ -71,6 +71,22 @@ $env:EVE_LOG_PATH="C:\ProgramData\Suricata\log\eve.json"
 
 python run_ghostnet.py --no-ids-sim
 ```
+
+### 4. Production / Railway
+The Procfile and `railway.json` start the API process only:
+
+```bash
+python engine.py
+```
+
+Optional environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed dashboard origins |
+| `GHOSTNET_API_KEY` | *(empty, open in local dev)* | Required on `POST /devices/{ip}/quarantine` and `/release` |
+| `VITE_API_URL` | *(dashboard)* | Public API URL for the deployed UI |
+| `VITE_API_KEY` | *(dashboard)* | Sent as `X-API-Key` from the dashboard |
 
 ### 3. PCAP Replay Mode
 Replay the included IoT attack capture through Suricata:
@@ -126,3 +142,4 @@ Tests cover:
 - `test_status_rules.py`: Severity 1-2 quarantine rules, severity 3 suspicious transitions, and clean-window recovery.
 - `test_security_sanitization.py`: Directory traversal prevention and Wireshark display filter injection blocking.
 - `test_api_endpoints.py`: All FastAPI endpoints and backwards-compatible `/nodes` mapping.
+- `test_api_auth_cors.py`: API key on quarantine/release and env-driven CORS origins.

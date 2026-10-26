@@ -3,7 +3,7 @@
 // Live telemetry hook: devices, stats, alerts, packet captures, and WS streaming
 // =============================================================================
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getApiUrl, getWsUrl } from './apiConfig.js'
+import { getApiHeaders, getApiUrl, getWsUrl } from './apiConfig.js'
 
 const MAX_EVENTS = 300
 const POLL_INTERVAL_MS = 2000
@@ -38,14 +38,17 @@ export function useGhostNet() {
   const fetchDevices = useCallback(async () => {
     try {
       const apiUrl = getApiUrl()
-      if (!apiUrl) return
-      const res = await fetch(`${apiUrl}/devices`)
+      if (!apiUrl) {
+        setIsLoading(false)
+        return
+      }
+      const res = await fetch(`${apiUrl}/devices`, { signal: AbortSignal.timeout(4000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const list = await res.json()
       setDevices(list)
       setError(null)
     } catch (err) {
-      // Backend may be starting up
+      setError(prev => prev || 'Cannot reach the GhostNet API. Start the backend or set the endpoint from the overflow menu.')
     } finally {
       setIsLoading(false)
     }
@@ -56,7 +59,7 @@ export function useGhostNet() {
     try {
       const apiUrl = getApiUrl()
       if (!apiUrl) return
-      const res = await fetch(`${apiUrl}/ids/stats`)
+      const res = await fetch(`${apiUrl}/ids/stats`, { signal: AbortSignal.timeout(4000) })
       if (!res.ok) return
       const data = await res.json()
       setStats(data)
@@ -76,7 +79,7 @@ export function useGhostNet() {
       if (params.ip) query.set('ip', params.ip)
       if (params.signature) query.set('signature', params.signature)
 
-      const res = await fetch(`${apiUrl}/ids/alerts?${query.toString()}`)
+      const res = await fetch(`${apiUrl}/ids/alerts?${query.toString()}`, { signal: AbortSignal.timeout(4000) })
       if (!res.ok) return
       const list = await res.json()
       setAlerts(list)
@@ -89,7 +92,10 @@ export function useGhostNet() {
   const releaseDevice = useCallback(async (ip) => {
     try {
       const apiUrl = getApiUrl()
-      await fetch(`${apiUrl}/devices/${ip}/release`, { method: 'POST' })
+      await fetch(`${apiUrl}/devices/${ip}/release`, {
+        method: 'POST',
+        headers: getApiHeaders(),
+      })
       await fetchDevices()
       await fetchStats()
     } catch (e) {
@@ -100,7 +106,10 @@ export function useGhostNet() {
   const quarantineDevice = useCallback(async (ip, reason = 'Operator manual quarantine') => {
     try {
       const apiUrl = getApiUrl()
-      await fetch(`${apiUrl}/devices/${ip}/quarantine?reason=${encodeURIComponent(reason)}`, { method: 'POST' })
+      await fetch(`${apiUrl}/devices/${ip}/quarantine?reason=${encodeURIComponent(reason)}`, {
+        method: 'POST',
+        headers: getApiHeaders(),
+      })
       await fetchDevices()
       await fetchStats()
     } catch (e) {

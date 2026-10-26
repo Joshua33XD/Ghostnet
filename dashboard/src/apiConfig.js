@@ -34,6 +34,17 @@ export function getWsUrl() {
   return `${api.replace(/^http/, 'ws')}/ws/events`
 }
 
+export function getApiKey() {
+  return (import.meta.env.VITE_API_KEY || '').trim()
+}
+
+export function getApiHeaders(extra = {}) {
+  const headers = { ...extra }
+  const key = getApiKey()
+  if (key) headers['X-API-Key'] = key
+  return headers
+}
+
 export async function pingApi(apiUrl = getApiUrl()) {
   const res = await fetch(`${apiUrl}/`, { method: 'GET' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
