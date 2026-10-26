@@ -1,4 +1,6 @@
 // Utility helpers shared across components
+import { clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
 
 export function getScoreClass(score) {
   if (score >= 0.75) return 'critical'
@@ -139,5 +141,8 @@ export function formatRate(bps) {
   return `${Math.round(bps)} B/s`
 }
 
-export { cn } from './lib/utils.js'
+export function cn(...inputs) {
+  return twMerge(clsx(inputs))
+}
+
 
