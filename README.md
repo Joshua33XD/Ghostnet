@@ -1,6 +1,6 @@
 # GhostNet Network IDS
 
-**GhostNet** is a high-performance network-only Intrusion Detection System (IDS) dashboard. It consumes Suricata's `eve.json` as its single live data source and provides real-time device health evaluation, traffic statistics, alert telemetry, and on-demand packet drill-down.
+**GhostNet** is an ESP32-aware network Intrusion Detection System (IDS). Suricata detects threats from network traffic while ESP32 nodes report their health and receive quarantine or release commands from GhostNet.
 
 ---
 
@@ -72,6 +72,15 @@ $env:EVE_LOG_PATH="C:\ProgramData\Suricata\log\eve.json"
 python run_ghostnet.py --no-ids-sim
 ```
 
+### 3. Connect an ESP32 Node
+
+1. Open `firmware/ghostnet_esp32/ghostnet_esp32.ino` in the Arduino IDE.
+2. Set Wi-Fi credentials, the backend's LAN address (for example `http://192.168.1.100:8000`), and a unique `NODE_ID`.
+3. Set `GHOSTNET_ESP_DEVICE_KEY` on the backend and use the same value in `GHOSTNET_DEVICE_KEY` in the sketch. Keep it empty only for local development.
+4. Upload the sketch. The node appears in `/devices` with `device_type: "esp32"`; it sends telemetry every 10 seconds and polls commands every 3 seconds.
+
+GhostNet keeps Suricata as the authority for threats. A dashboard or Suricata quarantine changes the ESP32's safe-mode output through the next poll; releasing the device clears it. Replace the `SAFE_MODE_PIN` behavior in the sketch with the action appropriate for your device.
+
 ### 4. Production / Railway
 The Procfile and `railway.json` start the API process only:
 
@@ -83,12 +92,13 @@ Optional environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed dashboard origins |
+| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed dashboard origins |
 | `GHOSTNET_API_KEY` | *(empty, open in local dev)* | Required on `POST /devices/{ip}/quarantine` and `/release` |
+| `GHOSTNET_ESP_DEVICE_KEY` | *(empty, open in local dev)* | Required on ESP32 telemetry, command polling, and acknowledgements |
 | `VITE_API_URL` | *(dashboard)* | Public API URL for the deployed UI |
 | `VITE_API_KEY` | *(dashboard)* | Sent as `X-API-Key` from the dashboard |
 
-### 3. PCAP Replay Mode
+### 4. PCAP Replay Mode
 Replay the included IoT attack capture through Suricata:
 
 ```bash
@@ -143,3 +153,7 @@ Tests cover:
 - `test_security_sanitization.py`: Directory traversal prevention and Wireshark display filter injection blocking.
 - `test_api_endpoints.py`: All FastAPI endpoints and backwards-compatible `/nodes` mapping.
 - `test_api_auth_cors.py`: API key on quarantine/release and env-driven CORS origins.
+
+## Windows WebSocket Resets
+
+GhostNet uses Windows' selector event loop at startup to avoid harmless `WinError 10054` traces when browsers or Vite hot-reload close WebSocket connections. Restart GhostNet after upgrading to apply this setting.

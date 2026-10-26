@@ -74,7 +74,8 @@ export default function DevicesView({
         const term = searchTerm.toLowerCase()
         const ip = (d.ip || '').toLowerCase()
         const name = (d.name || '').toLowerCase()
-        if (!ip.includes(term) && !name.includes(term)) return false
+        const nodeId = (d.node_id || '').toLowerCase()
+        if (!ip.includes(term) && !name.includes(term) && !nodeId.includes(term)) return false
       }
       return true
     })
@@ -227,7 +228,7 @@ export default function DevicesView({
                         {dev.name || 'IoT Device'}
                       </h3>
                       <span style={{ fontFamily: 'var(--wf-mono)', fontSize: 12, color: 'var(--wf-ink-soft)' }}>
-                        {dev.ip}
+                        {dev.device_type === 'esp32' ? `ESP32 · ${dev.node_id || dev.ip}` : dev.ip}
                       </span>
                     </div>
                   </div>
@@ -283,9 +284,22 @@ export default function DevicesView({
                 {currentDevice.name || 'IoT Device'}
               </h2>
               <div style={{ fontFamily: 'var(--wf-mono)', fontSize: 13, color: 'var(--wf-cyan)', marginTop: 2 }}>
-                IP: {currentDevice.ip} · MAC: 52:54:00:{currentDevice.ip.split('.')[3] || 'aa'}:34:12
+                IP: {currentDevice.ip} · MAC: {currentDevice.telemetry?.mac || 'Not reported'}
               </div>
             </div>
+
+            {currentDevice.device_type === 'esp32' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontFamily: 'var(--wf-mono)', fontSize: 11 }}>
+                <div style={{ padding: 10, background: 'rgba(0,242,254,0.06)', border: '1px solid rgba(0,242,254,0.2)', borderRadius: 8 }}>
+                  <div style={{ color: 'var(--wf-mute)' }}>ESP32 NODE</div>
+                  <div style={{ color: 'var(--wf-cyan)', marginTop: 4 }}>{currentDevice.node_id || 'Unidentified'}</div>
+                </div>
+                <div style={{ padding: 10, background: 'rgba(0,242,254,0.06)', border: '1px solid rgba(0,242,254,0.2)', borderRadius: 8 }}>
+                  <div style={{ color: 'var(--wf-mute)' }}>WI-FI SIGNAL</div>
+                  <div style={{ color: 'var(--wf-cyan)', marginTop: 4 }}>{currentDevice.telemetry?.rssi ?? '—'} dBm</div>
+                </div>
+              </div>
+            )}
 
             {/* Quarantine & Containment Action Controls */}
             <div style={{ padding: 14, background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--wf-line)' }}>

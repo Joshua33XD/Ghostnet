@@ -9,6 +9,10 @@ import sys
 import threading
 from pathlib import Path
 
+from ghostnet.runtime import configure_event_loop
+
+configure_event_loop()
+
 # Force UTF-8 output on Windows so Rich doesn't crash on box-drawing chars
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     try:
