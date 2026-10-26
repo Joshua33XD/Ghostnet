@@ -2,7 +2,22 @@ import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Server, ShieldAlert, ShieldCheck, AlertTriangle, Lock, Unlock, Search, Terminal, ArrowUpRight, Activity, Laptop, Camera, Thermometer, Radio, Cpu } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
-import { formatBytes, formatRate } from '../utils.js'
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
+  return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`
+}
+
+function formatRate(bps) {
+  if (!bps) return '0 B/s'
+  if (bps >= 1048576) return `${(bps / 1048576).toFixed(1)} MB/s`
+  if (bps >= 1024) return `${(bps / 1024).toFixed(1)} KB/s`
+  return `${Math.round(bps)} B/s`
+}
+
 
 function getDeviceIcon(ip, role) {
   const r = (role || '').toLowerCase()

@@ -2,7 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, ShieldAlert } from 'lucide-react'
 import { SPRING } from '../motion.js'
-import { formatRelativeTime } from '../utils.js'
+
+function formatRelativeTime(receivedMs, rawTs) {
+  let epochMs = receivedMs
+  if (!epochMs && rawTs) {
+    const d = new Date(rawTs)
+    epochMs = isNaN(d.getTime()) ? null : d.getTime()
+  }
+  if (!epochMs) return rawTs ?? '—'
+
+  const diff = (Date.now() - epochMs) / 1000
+  if (diff < 5)     return 'just now'
+  if (diff < 60)    return `${Math.floor(diff)}s ago`
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
 
 const WATCH = ['SUSPICIOUS', 'ATTACK', 'THREAT', 'QUARANTINE', 'WARN', 'ANOMALY']
 
