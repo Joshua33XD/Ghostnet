@@ -35,6 +35,7 @@ DEVICE_NAMES: Dict[str, str] = parse_device_names()
 # ── Packet Drill-Down & Capture ───────────────────────────────────────────────
 PCAP_DIR: str = os.environ.get("PCAP_DIR", "sensors/suricata/pcaps")
 API_KEY: str = os.environ.get("GHOSTNET_API_KEY", "")
+ESP_DEVICE_KEY: str = os.environ.get("GHOSTNET_ESP_DEVICE_KEY", "")
 TSHARK_PATH: str = os.environ.get("TSHARK_PATH", "tshark")
 
 # ── Quarantine & Recovery ─────────────────────────────────────────────────────

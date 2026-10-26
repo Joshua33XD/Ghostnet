@@ -54,9 +54,11 @@ def run_api_only(ids_sim: bool = False) -> None:
     from ghostnet import config, logger
     from ghostnet.api.main import app, set_state_store
     from ghostnet.response.quarantine_manager import QuarantineManager
+    from ghostnet.runtime import configure_event_loop
     from ghostnet.storage.state_store import StateStore
     from sensors.eve_tailer import EveTailer
 
+    configure_event_loop()
     store = StateStore()
     set_state_store(store)
 

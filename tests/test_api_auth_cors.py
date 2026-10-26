@@ -24,7 +24,7 @@ def _client_with_device():
 
 def test_cors_origins_default_and_env(monkeypatch):
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
-    assert _cors_origins() == ["http://localhost:5173"]
+    assert _cors_origins() == ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com, http://localhost:5173")
     assert _cors_origins() == ["https://app.example.com", "http://localhost:5173"]

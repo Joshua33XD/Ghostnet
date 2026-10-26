@@ -12,6 +12,7 @@ import collections
 import datetime
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
@@ -59,6 +60,9 @@ class DeviceState:
     rate_samples: collections.deque = field(default_factory=lambda: collections.deque(maxlen=20))
     history_bps: List[Dict[str, Any]] = field(default_factory=list)  # max 60 points
     history_pps: List[Dict[str, Any]] = field(default_factory=list)  # max 60 points
+    node_id: Optional[str] = None
+    device_type: str = "network"
+    telemetry: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.name:
@@ -186,6 +190,9 @@ class DeviceState:
             "pps": self.pps,
             "history_bps": self.history_bps,
             "history_pps": self.history_pps,
+            "node_id": self.node_id,
+            "device_type": self.device_type,
+            "telemetry": self.telemetry,
         }
 
     def to_node_dict(self) -> Dict[str, Any]:
@@ -236,6 +243,7 @@ class StateStore:
         self._signature_counts: collections.defaultdict[str, Dict[str, Any]] = collections.defaultdict(
             lambda: {"count": 0, "severity": 3, "signature": ""}
         )
+        self._pending_commands: Dict[str, List[Dict[str, str]]] = collections.defaultdict(list)
 
     # ── Device Management ───────────────────────────────────────────────────────
     def get_or_create_device(self, ip: str) -> DeviceState:
@@ -283,6 +291,57 @@ class StateStore:
     def all_nodes(self) -> List[Any]:
         with self._lock:
             return [self.get(ip) for ip in self._devices]
+
+    def record_esp_telemetry(self, node_id: str, telemetry: Dict[str, Any]) -> DeviceState:
+        """Registers an ESP node and stores its latest self-reported health data."""
+        reported_ip = str(telemetry.get("ip") or "").strip()
+        device_key = reported_ip if reported_ip and reported_ip != "0.0.0.0" else node_id
+        now = time.time()
+        with self._lock:
+            device = self.get_or_create_device(device_key)
+            device.node_id = node_id
+            device.device_type = "esp32"
+            device.last_seen = now
+            device.telemetry = dict(telemetry)
+            device.telemetry["received_at"] = now
+            name = telemetry.get("name")
+            if isinstance(name, str) and name.strip():
+                device.name = name.strip()
+            return device
+
+    def _device_key_for_node(self, node_id: str) -> str:
+        for key, device in self._devices.items():
+            if device.node_id == node_id:
+                return key
+        return node_id
+
+    def queue_command(self, device_id: str, action: str, reason: str = "") -> Dict[str, str]:
+        """Queues a command until the matching ESP node acknowledges it."""
+        with self._lock:
+            key = self._device_key_for_node(device_id)
+            command = {
+                "id": uuid.uuid4().hex,
+                "action": action,
+                "reason": reason,
+                "created_at": str(int(time.time())),
+            }
+            self._pending_commands[key].append(command)
+            return command
+
+    def next_command(self, node_id: str) -> Optional[Dict[str, str]]:
+        with self._lock:
+            key = self._device_key_for_node(node_id)
+            pending = self._pending_commands.get(key, [])
+            return dict(pending[0]) if pending else None
+
+    def acknowledge_command(self, node_id: str, command_id: str) -> bool:
+        with self._lock:
+            key = self._device_key_for_node(node_id)
+            pending = self._pending_commands.get(key, [])
+            if pending and pending[0]["id"] == command_id:
+                pending.pop(0)
+                return True
+            return False
 
     # ── Event Ingestion ────────────────────────────────────────────────────────
     def ingest_event(self, event: Dict[str, Any]) -> None:
@@ -401,6 +460,8 @@ class StateStore:
                 ip=ip,
                 reason=reason,
             )
+            if dev.device_type == "esp32":
+                self.queue_command(ip, "QUARANTINE", reason)
             return True
 
     def mark_recovered(self, ip: str) -> bool:
@@ -419,6 +480,8 @@ class StateStore:
                 node_id=ip,
                 ip=ip,
             )
+            if dev.device_type == "esp32":
+                self.queue_command(ip, "RELEASE", "Manual operator release")
             return True
 
     # ── IDS Alert & Metric Queries ─────────────────────────────────────────────

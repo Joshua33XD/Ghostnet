@@ -52,9 +52,9 @@ app = FastAPI(
 )
 
 def _cors_origins() -> List[str]:
-    raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173")
+    raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     origins = [item.strip() for item in raw.split(",") if item.strip()]
-    return origins or ["http://localhost:5173"]
+    return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 class EnvCORSMiddleware(CORSMiddleware):
@@ -81,6 +81,12 @@ def get_store() -> StateStore:
     if _state_store is None:
         raise HTTPException(503, "GhostNet state store is initializing...")
     return _state_store
+
+
+def _verify_device_key(device_key: Optional[str]) -> None:
+    configured_key = config.ESP_DEVICE_KEY.strip()
+    if configured_key and device_key != configured_key:
+        raise HTTPException(401, "Invalid or missing ESP device key.")
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -111,6 +117,53 @@ def get_ids_stats() -> Dict[str, Any]:
     """Returns aggregated IDS statistics (severity counts, throughput, top signatures)."""
     store = get_store()
     return store.get_ids_stats()
+
+
+class ESPTelemetry(BaseModel):
+    node_id: str
+    ip: Optional[str] = None
+    name: Optional[str] = None
+    mac: Optional[str] = None
+    firmware: Optional[str] = None
+    rssi: Optional[int] = None
+    uptime_ms: Optional[int] = None
+    heap_free: Optional[int] = None
+    packet_rate: Optional[float] = None
+    anomaly_score: Optional[float] = None
+    quarantined: Optional[bool] = None
+
+
+class CommandAcknowledgement(BaseModel):
+    command_id: str
+
+
+@app.post("/esp/telemetry", tags=["ESP32"])
+def ingest_esp_telemetry(
+    telemetry: ESPTelemetry,
+    x_device_key: Optional[str] = Header(None),
+) -> Dict[str, Any]:
+    """Receives ESP32 health data without treating it as a security alert."""
+    _verify_device_key(x_device_key)
+    device = get_store().record_esp_telemetry(telemetry.node_id, telemetry.model_dump(exclude_none=True))
+    return {"status": "ok", "device_id": device.ip, "node_id": telemetry.node_id, "device_status": device.status}
+
+
+@app.get("/esp/{node_id}/command", tags=["ESP32"])
+def get_esp_command(node_id: str, x_device_key: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """Returns the next unacknowledged quarantine or release command for an ESP32."""
+    _verify_device_key(x_device_key)
+    command = get_store().next_command(node_id)
+    return {"command": command}
+
+
+@app.post("/esp/{node_id}/command/ack", tags=["ESP32"])
+def acknowledge_esp_command(
+    node_id: str,
+    acknowledgement: CommandAcknowledgement,
+    x_device_key: Optional[str] = Header(None),
+) -> Dict[str, bool]:
+    _verify_device_key(x_device_key)
+    return {"acknowledged": get_store().acknowledge_command(node_id, acknowledgement.command_id)}
 
 
 # ── Device Management ─────────────────────────────────────────────────────────
